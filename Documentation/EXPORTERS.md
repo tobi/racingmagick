@@ -275,15 +275,19 @@ const ldData = exporter.toMotecLD({
 ```typescript
 interface MotecLDExportOptions {
   // Driver name (max 64 characters)
+  // Default: Uses session.header.driverId if available, otherwise empty
   driverName?: string;
 
   // Vehicle ID (max 64 characters)
+  // Default: Uses session.header.vehicle if available, otherwise empty
   vehicleId?: string;
 
   // Venue/track name (max 64 characters)
+  // Default: Uses session.circuitInfo (circuit, country) if available, otherwise empty
   venue?: string;
 
   // Short comment (max 64 characters)
+  // Default: Auto-generated from session data (lap count, duration, etc.)
   comment?: string;
 
   // Device serial number (default: 'VBO-PARSER')
@@ -300,11 +304,37 @@ interface MotecLDExportOptions {
 }
 ```
 
+**Automatic Metadata Population:**
+
+When options are not explicitly provided, the exporter automatically extracts information from the VBO session:
+
+- **driverName**: Pulled from `session.header.driverId`
+- **vehicleId**: Pulled from `session.header.vehicle`
+- **venue**: Built from `session.circuitInfo.circuit` and `session.circuitInfo.country`
+- **comment**: Auto-generated with lap count, duration, and export source
+
+This means you can call `exportToMotecLD(session)` with no options and get a fully populated LD file with all available metadata!
+
 ### MoTeC Examples
 
-#### Example 1: Basic export with metadata
+#### Example 1: Automatic metadata from VBO session (no options required!)
 
 ```typescript
+// If your VBO file has driver, vehicle, and circuit info, just export!
+const ldData = exportToMotecLD(session);
+// Automatically includes:
+// - Driver name from VBO header
+// - Vehicle from VBO header
+// - Circuit/country from VBO circuit info
+// - Auto-generated comment with lap count and duration
+
+writeFileSync('session.ld', ldData);
+```
+
+#### Example 2: Basic export with custom metadata
+
+```typescript
+// Override automatic metadata with your own
 const ldData = exportToMotecLD(session, {
   driverName: 'John Doe',
   vehicleId: 'Porsche 911 GT3 #42',
@@ -315,7 +345,7 @@ const ldData = exportToMotecLD(session, {
 writeFileSync('session.ld', ldData);
 ```
 
-#### Example 2: Export essential channels only
+#### Example 3: Export essential channels only
 
 ```typescript
 const ldData = exportToMotecLD(session, {
@@ -336,7 +366,7 @@ const ldData = exportToMotecLD(session, {
 });
 ```
 
-#### Example 3: Export fastest lap
+#### Example 4: Export fastest lap with auto-generated metadata
 
 ```typescript
 import { findFastestLap } from '@vbo-parser/core';
@@ -344,11 +374,8 @@ import { findFastestLap } from '@vbo-parser/core';
 const fastestLap = findFastestLap(session.laps);
 
 if (fastestLap) {
+  // Comment will auto-generate as "Lap X: Y.YYYs - VBO Export"
   const ldData = exportToMotecLD(session, {
-    driverName: 'Pro Driver',
-    vehicleId: 'Race Car',
-    venue: 'Nürburgring GP',
-    comment: `Fastest lap: ${fastestLap.lapTime.toFixed(3)}s`,
     lapNumber: fastestLap.lapNumber,
   });
 
@@ -356,16 +383,13 @@ if (fastestLap) {
 }
 ```
 
-#### Example 4: Batch export all laps
+#### Example 5: Batch export all laps (using automatic metadata)
 
 ```typescript
 for (const lap of session.laps) {
   if (lap.isValid && lap.label === 'timed-lap') {
+    // All metadata auto-populated from session, comment auto-generated
     const ldData = exportToMotecLD(session, {
-      driverName: 'Test Driver',
-      vehicleId: 'Test Car',
-      venue: 'Test Track',
-      comment: `Lap ${lap.lapNumber} - ${lap.lapTime.toFixed(3)}s`,
       lapNumber: lap.lapNumber,
     });
 

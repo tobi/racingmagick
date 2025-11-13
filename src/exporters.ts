@@ -260,11 +260,52 @@ export class VBOExporter {
    * ```
    */
   public toMotecLD(options: MotecLDExportOptions = {}): Uint8Array {
+    // Auto-populate metadata from session if not provided
+    const driverName = options.driverName ?? this.session.header.driverId ?? '';
+    const vehicleId = options.vehicleId ?? this.session.header.vehicle ?? '';
+
+    // Build venue from circuit info
+    let venue = options.venue;
+    if (!venue) {
+      const parts: string[] = [];
+      if (this.session.circuitInfo.circuit) {
+        parts.push(this.session.circuitInfo.circuit);
+      }
+      if (this.session.circuitInfo.country) {
+        parts.push(this.session.circuitInfo.country);
+      }
+      venue = parts.join(', ') || '';
+    }
+
+    // Build informative comment from session data
+    let comment = options.comment;
+    if (!comment) {
+      const parts: string[] = [];
+
+      // Add lap info if exporting single lap
+      if (options.lapNumber !== undefined) {
+        const lap = this.session.laps.find((l) => l.lapNumber === options.lapNumber);
+        if (lap) {
+          parts.push(`Lap ${lap.lapNumber}: ${lap.lapTime.toFixed(3)}s`);
+          if (lap.label !== 'timed-lap') {
+            parts.push(`(${lap.label})`);
+          }
+        }
+      } else {
+        // Full session info
+        if (this.session.laps.length > 0) {
+          parts.push(`${this.session.laps.length} laps`);
+        }
+        parts.push(`${this.session.totalTime.toFixed(1)}s`);
+      }
+
+      // Add source info
+      parts.push('VBO Export');
+
+      comment = parts.join(' - ');
+    }
+
     const {
-      driverName = '',
-      vehicleId = '',
-      venue = '',
-      comment = 'Exported from VBO Parser',
       serialNumber = 'VBO-PARSER',
       deviceType = 'VBO',
       channels,

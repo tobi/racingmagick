@@ -185,7 +185,19 @@ async function main() {
   console.log('-'.repeat(70));
 
   try {
-    // Example 3a: Basic LD export with metadata
+    // Example 3a: Automatic metadata export (no options required!)
+    const ldAuto = exportToMotecLD(session);
+
+    console.log('Example 3a: MoTeC LD export with automatic metadata:');
+    console.log(`  - File size: ${ldAuto.length} bytes`);
+    console.log(`  - Metadata auto-populated from VBO session`);
+    console.log(`  - Driver: ${session.header.driverId || '(from VBO)'}`);
+    console.log(`  - Vehicle: ${session.header.vehicle || '(from VBO)'}`);
+    console.log(`  - Circuit: ${session.circuitInfo.circuit || '(from VBO)'}`);
+    console.log(`  - Auto-generated comment with session stats`);
+    console.log();
+
+    // Example 3b: Basic LD export with custom metadata
     const ldBasic = exportToMotecLD(session, {
       driverName: 'John Doe',
       vehicleId: 'Example Car #42',
@@ -194,7 +206,7 @@ async function main() {
       channels: ['time', 'velocity', 'engineSpeed', 'throttlePedal', 'brakePressureFront', 'steeringAngle', 'gear'],
     });
 
-    console.log('Example 3a: MoTeC LD export with metadata:');
+    console.log('Example 3b: MoTeC LD export with custom metadata:');
     console.log(`  - File size: ${ldBasic.length} bytes`);
     console.log(`  - Header size: 1536 bytes`);
     console.log(`  - Channel count: 7`);
@@ -230,19 +242,16 @@ async function main() {
     console.log(`✓ Saved MoTeC LD export to: ${ldPath}`);
     console.log();
 
-    // Example 3b: Using VBOExporter class directly
-    console.log('Example 3b: Using VBOExporter class:');
+    // Example 3c: Using VBOExporter class directly (automatic metadata)
+    console.log('Example 3c: Using VBOExporter class with auto-metadata:');
     const exporter = new VBOExporter(session);
 
-    // Export all default channels
-    const ldFull = exporter.toMotecLD({
-      driverName: 'Jane Smith',
-      vehicleId: 'Full Export Car',
-      venue: 'Test Track',
-    });
+    // Export all default channels with automatic metadata
+    const ldFull = exporter.toMotecLD();
 
     console.log(`  - Full export file size: ${ldFull.length} bytes`);
     console.log(`  - Contains all available channels`);
+    console.log(`  - All metadata auto-populated from session`);
     console.log();
 
   } catch (error) {

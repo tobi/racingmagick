@@ -289,6 +289,53 @@ describe('VBOExporter', () => {
       expect(ldData.length).toBeGreaterThan(1536); // Minimum header size
     });
 
+    test('should auto-populate metadata from session', () => {
+      const session = createMockSession();
+      const exporter = new VBOExporter(session);
+
+      // Export with no options - should use session data
+      const ldData = exporter.toMotecLD();
+
+      const decoder = new TextDecoder();
+      const text = decoder.decode(ldData.slice(0, 1536));
+
+      // Should include data from session
+      expect(text).toContain('TEST-001'); // driverId from session
+      expect(text).toContain('Test Car'); // vehicle from session
+      expect(text).toContain('Test Track'); // circuit from session
+      expect(text).toContain('UK'); // country from session
+    });
+
+    test('should auto-generate comment with session stats', () => {
+      const session = createMockSession();
+      const exporter = new VBOExporter(session);
+
+      // Export with no comment - should auto-generate
+      const ldData = exporter.toMotecLD();
+
+      const decoder = new TextDecoder();
+      const text = decoder.decode(ldData.slice(0, 1536));
+
+      // Should include auto-generated comment with lap count and duration
+      expect(text).toContain('VBO Export'); // Source marker
+    });
+
+    test('should auto-generate lap-specific comment', () => {
+      const session = createMockSession();
+      const exporter = new VBOExporter(session);
+
+      // Export single lap - should generate lap-specific comment
+      const ldData = exporter.toMotecLD({
+        lapNumber: 1,
+      });
+
+      const decoder = new TextDecoder();
+      const text = decoder.decode(ldData.slice(0, 1536));
+
+      // Should include lap number in comment
+      expect(text).toContain('Lap 1');
+    });
+
     test('should write correct header marker', () => {
       const session = createMockSession();
       const exporter = new VBOExporter(session);
