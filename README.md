@@ -8,6 +8,7 @@ A comprehensive TypeScript library for parsing and analyzing VBO (Vehicle Bus Ob
 - 🔄 **Automatic lap detection** - Smart lap detection using GPS data or existing lap markers
 - 📊 **Sector analysis** - Automatically generate sector times and analysis
 - 🔁 **Session comparison** - Synchronize and compare multiple racing sessions
+- 📤 **Data export** - Export to CSV and MoTeC i2 Pro LD formats
 - 🎯 **Type-safe** - Full TypeScript support with Zod validation
 - 🌐 **Browser & Node.js** - Works in both browser and server environments
 - 📱 **File System Access API** - Modern browser file picking support
@@ -27,7 +28,7 @@ bun add '@vbo-parser/core@git+https://github.com/tobi/vbo-parser'
 ## Quick Start
 
 ```typescript
-import { VBOParser, detectLaps, findFastestLap } from '@vbo-parser/core';
+import { VBOParser, detectLaps, findFastestLap, exportToCSV, exportToMotecLD } from '@vbo-parser/core';
 
 // Parse a VBO file
 const parser = new VBOParser();
@@ -43,14 +44,28 @@ console.log(`Session: ${session.filePath}`);
 console.log(`Total time: ${session.totalTime}s`);
 console.log(`Laps: ${laps.length}`);
 console.log(`Fastest lap: ${fastestLap?.lapTime}s`);
+
+// Export to CSV (time always in first column)
+const csv = exportToCSV(session, {
+  channels: ['time', 'velocity', 'engineSpeed', 'throttlePedal'],
+  decimalPlaces: 3,
+});
+
+// Export to MoTeC i2 Pro format
+const ldData = exportToMotecLD(session, {
+  driverName: 'John Doe',
+  vehicleId: 'Car #42',
+  venue: 'Silverstone GP',
+});
 ```
 
 ## 📚 Documentation
 
-- **[📖 Complete Documentation](DOCUMENTATION.md)** - Comprehensive documentation and advanced usage
-- **[🔧 API Reference](API.md)** - Detailed API documentation
-- **[📋 VBO Format Specification](VBO_FORMAT.md)** - Complete VBO file format documentation
-- **[🧪 Testing Guide](TESTING.md)** - Testing and debugging information
+- **[📖 Complete Documentation](Documentation/DOCUMENTATION.md)** - Comprehensive documentation and advanced usage
+- **[🔧 API Reference](Documentation/API.md)** - Detailed API documentation
+- **[📤 Data Exporters](Documentation/EXPORTERS.md)** - CSV and MoTeC i2 export guide
+- **[📋 VBO Format Specification](Documentation/VBO_FORMAT.md)** - Complete VBO file format documentation
+- **[💡 Usage Guide](Documentation/USAGE.md)** - Examples and usage patterns
 
 ## API Reference
 
