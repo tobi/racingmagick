@@ -78,3 +78,11 @@ export const detectLaps = LapDetection.detectLaps;
 export const findFastestLap = LapDetection.findFastestLap;
 export const calculateAverageLapTime = LapDetection.calculateAverageLapTime;
 export const findBestSectorTimes = LapDetection.findBestSectorTimes;
+
+// Exporters
+export { VBOExporter, exportToCSV, exportToMotecLD } from './exporters';
+export type {
+  ExportFormat,
+  CSVExportOptions,
+  MotecLDExportOptions,
+} from './exporters';
