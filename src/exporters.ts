@@ -10,7 +10,7 @@
  * @module exporters
  */
 
-import type { VBOSession, VBODataPoint } from './types';
+import type { VBOSession, VBODataPoint, VBOVideoFile } from './types';
 
 /**
  * Export format types supported by the exporters
@@ -348,6 +348,7 @@ export class VBOExporter {
       comment,
       serialNumber,
       deviceType,
+      videos: this.session.videos,
     });
 
     // Write channel metadata and data
@@ -429,6 +430,8 @@ export class VBOExporter {
       'height',
       'verticalVelocity',
       'samplePeriod',
+      'aviFileIndex',  // Video sync: which video file
+      'aviSyncTime',   // Video sync: timestamp in video
       'engineSpeed',
       'vehicleSpeed',
       'throttlePedal',
@@ -594,6 +597,7 @@ export class VBOExporter {
       comment: string;
       serialNumber: string;
       deviceType: string;
+      videos: VBOVideoFile[];
     }
   ): void {
     let offset = 0;
@@ -653,6 +657,25 @@ export class VBOExporter {
     // Device version (should be offset 0x30 from start, typically 420)
     view.setUint16(offset, 420, true);
     offset += 2;
+
+    // Video file information (custom extension for VBO compatibility)
+    // Using offset 512 to avoid conflicts with standard LD format
+    let videoOffset = 512;
+
+    // Write video count
+    view.setUint16(videoOffset, Math.min(options.videos.length, 10), true);
+    videoOffset += 2;
+
+    // Write video filenames (up to 10 videos, 128 bytes each for filename)
+    for (let i = 0; i < Math.min(options.videos.length, 10); i++) {
+      const video = options.videos[i];
+      if (video) {
+        // Extract just the filename (remove path)
+        const filename = video.filename.split('/').pop() || video.filename;
+        this.writeString(uint8, videoOffset, filename, 128);
+        videoOffset += 128;
+      }
+    }
 
     // Fill rest of header with zeros (handled by ArrayBuffer initialization)
   }

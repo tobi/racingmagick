@@ -572,4 +572,122 @@ describe('VBOExporter', () => {
       expect(secondRow[0]).toBe('0.100');
     });
   });
+
+  describe('Video Synchronization', () => {
+    test('should include video sync channels in default export', () => {
+      const session = createMockSession();
+      const exporter = new VBOExporter(session);
+
+      // Export with default channels
+      const csv = exporter.toCSV();
+
+      const lines = csv.split('\n');
+      const header = lines[0];
+
+      // Should include video sync channels
+      expect(header).toContain('AVI File Index');
+      expect(header).toContain('AVI Sync Time');
+    });
+
+    test('should include video sync channels in LD export', () => {
+      const session = createMockSession();
+      const exporter = new VBOExporter(session);
+
+      // Export with default channels - should include video sync
+      const ldData = exporter.toMotecLD();
+
+      // Should have exported the channels
+      expect(ldData).toBeInstanceOf(Uint8Array);
+      expect(ldData.length).toBeGreaterThan(1536);
+    });
+
+    test('should write video filenames to LD header', () => {
+      const session = createMockSession();
+
+      // Add video files to session
+      session.videos = [
+        { filename: '/videos/session_0001.mp4', index: 1 },
+        { filename: '/videos/session_0002.mp4', index: 2 },
+      ];
+
+      const exporter = new VBOExporter(session);
+      const ldData = exporter.toMotecLD();
+
+      // Read video count from header (offset 512)
+      const view = new DataView(ldData.buffer);
+      const videoCount = view.getUint16(512, true);
+
+      expect(videoCount).toBe(2);
+
+      // Read video filenames
+      const decoder = new TextDecoder();
+
+      // First video filename at offset 514
+      const video1Data = ldData.slice(514, 514 + 128);
+      const video1Name = decoder.decode(video1Data).replace(/\0/g, '');
+      expect(video1Name).toContain('session_0001.mp4');
+
+      // Second video filename at offset 642 (514 + 128)
+      const video2Data = ldData.slice(642, 642 + 128);
+      const video2Name = decoder.decode(video2Data).replace(/\0/g, '');
+      expect(video2Name).toContain('session_0002.mp4');
+    });
+
+    test('should handle sessions with no videos', () => {
+      const session = createMockSession();
+
+      // No videos in session
+      session.videos = [];
+
+      const exporter = new VBOExporter(session);
+      const ldData = exporter.toMotecLD();
+
+      // Read video count from header
+      const view = new DataView(ldData.buffer);
+      const videoCount = view.getUint16(512, true);
+
+      expect(videoCount).toBe(0);
+    });
+
+    test('should limit to 10 videos maximum', () => {
+      const session = createMockSession();
+
+      // Add 15 videos (more than limit)
+      session.videos = Array.from({ length: 15 }, (_, i) => ({
+        filename: `/videos/session_${String(i + 1).padStart(4, '0')}.mp4`,
+        index: i + 1,
+      }));
+
+      const exporter = new VBOExporter(session);
+      const ldData = exporter.toMotecLD();
+
+      // Read video count from header
+      const view = new DataView(ldData.buffer);
+      const videoCount = view.getUint16(512, true);
+
+      // Should be limited to 10
+      expect(videoCount).toBe(10);
+    });
+
+    test('should extract filename from path', () => {
+      const session = createMockSession();
+
+      // Add video with full path
+      session.videos = [
+        { filename: '/full/path/to/videos/test_video.mp4', index: 1 },
+      ];
+
+      const exporter = new VBOExporter(session);
+      const ldData = exporter.toMotecLD();
+
+      // Read video filename
+      const decoder = new TextDecoder();
+      const videoData = ldData.slice(514, 514 + 128);
+      const videoName = decoder.decode(videoData).replace(/\0/g, '');
+
+      // Should only have filename, not full path
+      expect(videoName).toBe('test_video.mp4');
+      expect(videoName).not.toContain('/full/path/');
+    });
+  });
 });

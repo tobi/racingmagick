@@ -746,6 +746,68 @@ For VBO exports, calibration parameters are set to preserve original values:
 - scale = 1 (or 10 for RPM)
 - decimals = 3 (or 0 for integers)
 
+### Video Synchronization
+
+The exporter automatically includes video synchronization support when exporting to MoTeC LD format:
+
+**Automatic Video Support:**
+- **Video sync channels**: `aviFileIndex` and `aviSyncTime` are automatically included in exports
+- **Video filenames**: Video filenames from the VBO session are embedded in the LD header
+- **Multi-video support**: Supports up to 10 video files per session
+
+**How Video Sync Works:**
+
+1. **AVI File Index**: Channel indicating which video file (1, 2, 3, etc.)
+2. **AVI Sync Time**: Timestamp in the video file (seconds)
+3. **Video Filenames**: Stored in LD header at offset 512
+
+**Best Practices for Video Files:**
+
+When saving LD files with video references, follow these conventions for maximum compatibility:
+
+1. **Same Directory**: Place video files in the same directory as the LD file
+2. **Matching Base Name**: Name videos with the same base as the LD file:
+   ```
+   session.ld
+   session_0001.mp4
+   session_0002.mp4
+   ```
+3. **File Formats**: MoTeC i2 typically supports MP4, AVI, and MOV formats
+
+**Example: Export with Video Sync**
+
+```typescript
+import { parseVBOFile, exportToMotecLD } from '@vbo-parser/core';
+
+// Parse VBO file (includes video references)
+const session = await parseVBOFile(vboFile);
+
+// Export to LD - video sync channels included automatically
+const ldData = exportToMotecLD(session);
+
+// Save LD file with same base name as VBO
+writeFileSync('session.ld', ldData);
+
+// Ensure video files are in same directory:
+// - session_0001.mp4
+// - session_0002.mp4
+// etc.
+```
+
+**Viewing in MoTeC i2:**
+
+When you open the LD file in MoTeC i2 Pro:
+1. The software will look for video files in the same directory
+2. Videos are automatically synchronized using the AVI Index and Sync Time channels
+3. Video playback follows telemetry data timeline
+
+**Video File Information:**
+
+The exported LD files contain:
+- Video count (number of associated videos)
+- Video filenames (up to 10 videos, 128 characters each)
+- Full sync channel data for frame-accurate synchronization
+
 ---
 
 ## Further Reading

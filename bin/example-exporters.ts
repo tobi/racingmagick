@@ -258,8 +258,59 @@ async function main() {
     console.error('✗ MoTeC LD export failed:', error);
   }
 
-  // Step 4: Comparison and Best Practices
-  console.log('Step 4: Export Format Comparison');
+  // Step 4: Video Synchronization
+  console.log('Step 4: Video Synchronization Support');
+  console.log('-'.repeat(70));
+
+  try {
+    console.log('Video synchronization is automatically included in exports:');
+    console.log();
+
+    // Check if session has videos
+    console.log(`Session video files: ${session.videos.length}`);
+    if (session.videos.length > 0) {
+      console.log('  Video files found:');
+      session.videos.forEach((video, i) => {
+        console.log(`    ${i + 1}. ${video.filename} (index: ${video.index})`);
+      });
+    } else {
+      console.log('  (No video files in this example session)');
+    }
+    console.log();
+
+    console.log('Video sync channels automatically included:');
+    console.log('  ✓ AVI File Index - indicates which video file');
+    console.log('  ✓ AVI Sync Time - timestamp within the video');
+    console.log();
+
+    console.log('How to use video synchronization:');
+    console.log('  1. Export VBO session to MoTeC LD format');
+    console.log('  2. Save LD file with base name (e.g., "session.ld")');
+    console.log('  3. Place video files in same directory:');
+    console.log('     - session_0001.mp4');
+    console.log('     - session_0002.mp4');
+    console.log('     - etc.');
+    console.log('  4. Open LD file in MoTeC i2 Pro');
+    console.log('  5. Videos automatically sync with telemetry data!');
+    console.log();
+
+    // Example export with videos
+    const ldWithVideos = exportToMotecLD(session);
+    const view = new DataView(ldWithVideos.buffer);
+    const videoCount = view.getUint16(512, true);
+
+    console.log('LD file video information:');
+    console.log(`  - Video count in header: ${videoCount}`);
+    console.log(`  - Video filenames stored at offset 512`);
+    console.log(`  - Sync channels included in telemetry data`);
+    console.log();
+
+  } catch (error) {
+    console.error('✗ Video sync example failed:', error);
+  }
+
+  // Step 5: Comparison and Best Practices
+  console.log('Step 5: Export Format Comparison');
   console.log('-'.repeat(70));
   console.log();
   console.log('CSV Format:');
@@ -275,6 +326,7 @@ async function main() {
   console.log('  ✓ Binary format with efficient storage');
   console.log('  ✓ Rich metadata (driver, vehicle, venue, etc.)');
   console.log('  ✓ Preserves channel units and calibration');
+  console.log('  ✓ Video synchronization support (AVI Index/Sync Time)');
   console.log('  ✓ Professional motorsport standard');
   console.log('  - Requires MoTeC i2 software to view');
   console.log();
