@@ -1,0 +1,8 @@
+{
+  "name": "racingmagick-inspector",
+  "private": true,
+  "scripts": {
+    "dev": "npx tsx server.mjs"
+  },
+  "devDependencies": {}
+}

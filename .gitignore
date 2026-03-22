@@ -4,3 +4,13 @@ node_modules
 *.log
 coverage
 .env
+
+# Binary telemetry fixtures (large, stored separately)
+fixtures/motec/*.ld
+fixtures/motec/*.ldx
+fixtures/pds/*.pds
+fixtures/vbo/*.vbo
+
+# Video files (symlinks to NAS + re-encoded)
+fixtures/vbo/*.mp4
+*_keyframed.mp4

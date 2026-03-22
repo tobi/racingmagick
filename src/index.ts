@@ -1,80 +1,101 @@
-// Import classes first
-import { VBOParser } from './parser';
-import { LapDetection } from './lap-detection';
-import type { VBOParserOptions } from './types';
+import { readFile } from 'fs/promises';
+import { Session } from './session';
+import { ParseError } from './types';
+import type { SessionFormat } from './types';
 
-// Main parser class
-export { VBOParser } from './parser';
-
-// Session comparison and synchronization
-export { SessionComparison } from './session-comparison';
-export type { 
-  NormalizedPosition,
-  SessionComparisonOptions,
-  SessionState 
-} from './session-comparison';
-
-// Lap detection utilities
-export { LapDetection } from './lap-detection';
-export type { LapDetectionOptions } from './lap-detection';
-
-// Core types and schemas
+// Re-export public API
+export { Session } from './session';
+export { Lap } from './lap';
+export { LapSample, LapSampleSlice } from './lap-sample';
+export { ChannelMatrix } from './channel-matrix';
 export {
-  // Zod schemas
-  VBOChannelSchema,
-  VBOHeaderSchema,
-  VBODataPointSchema,
-  VBOSectorSchema,
-  VBOLapSchema,
-  VBOVideoFileSchema,
-  VBOSessionSchema,
-  
-  // TypeScript types
-  type VBOHeader,
-  type VBOChannel,
-  type VBODataPoint,
-  type VBOLap,
-  type VBOSector,
-  type VBOSession,
-  type VBOVideoFile,
-  type TrackPoint,
-  type VBOParserOptions,
-  type FileSystemFileHandle,
-  type FileSystemDirectoryHandle,
-  
-  // Error classes
-  VBOParseError,
-  VBOValidationError,
+  ParseError, LapError, LapKind,
+  type SessionFormat, type SessionWarning, type ChannelAvailability,
+  type LapInfo, type LapDelta, type SectorTime, type CircuitInfo,
+  type TimingLine, type Stint, type PositionSource, type WarningCode,
 } from './types';
+export type { VideoAttachment, VideoSync, VideoFile, VideoSyncMethod } from './video';
+export { scoreFilenameMatch, discoverVideoFiles, fixVideoCommands } from './video';
+export { extractVideoTelemetry, detectVideoLapCrossings, alignLapCrossings } from './video-extract';
+export type { VideoTelemetry, VideoGpsSample, VideoMetadata } from './video-extract';
 
-// Re-export zod for convenience
-export { z } from 'zod';
+/**
+ * Parse any supported telemetry file.
+ * Format is auto-detected from extension, or can be specified explicitly.
+ */
+export async function parseFile(
+  input: string | Uint8Array,
+  format?: SessionFormat,
+): Promise<Session> {
+  if (typeof input === 'string') {
+    // File path
+    const ext = input.split('.').pop()?.toLowerCase();
+    const detectedFormat = format ?? detectFormat(ext);
+    const data = await readFile(input);
+    return parseBuffer(new Uint8Array(data), detectedFormat, input);
+  }
 
-// Version
-export const VERSION = '1.0.0';
+  if (!format) {
+    throw new ParseError('Format must be specified when parsing from Uint8Array');
+  }
+  return parseBuffer(input, format, 'buffer');
+}
 
-// Default parser instance for convenience
-export const defaultParser = new VBOParser();
+export async function parseMoTeC(input: string | Uint8Array): Promise<Session> {
+  const { parseMotec } = await import('./parsers/motec');
+  if (typeof input === 'string') {
+    const data = await readFile(input);
+    return parseMotec(new Uint8Array(data), input);
+  }
+  return parseMotec(input, 'buffer.ld');
+}
 
-// Convenience functions
-export const parseVBOFile = (input: File | string | Uint8Array, options?: VBOParserOptions) => {
-  const parser = options ? new VBOParser(options) : defaultParser;
-  return parser.parseVBOFile(input);
-};
+export async function parsePDS(input: string | Uint8Array): Promise<Session> {
+  const { parsePds } = await import('./parsers/pds');
+  if (typeof input === 'string') {
+    const data = await readFile(input);
+    return parsePds(new Uint8Array(data), input);
+  }
+  return parsePds(input, 'buffer.pds');
+}
 
-export const parseMultipleVBOFiles = (input: FileList | File[], options?: VBOParserOptions) => {
-  const parser = options ? new VBOParser(options) : defaultParser;
-  return parser.parseVBOFromInput(input);
-};
+export async function parseVBO(input: string | Uint8Array): Promise<Session> {
+  const { parseVbo } = await import('./parsers/vbo');
+  if (typeof input === 'string') {
+    const data = await readFile(input);
+    return parseVbo(new Uint8Array(data), input);
+  }
+  return parseVbo(input, 'buffer.vbo');
+}
 
-// Utility exports
-export const getVideoForDataPoint = VBOParser.getVideoForDataPoint;
-export const calculateDistance = VBOParser.calculateDistance;
-export const listVBOFiles = VBOParser.listVBOFiles;
-export const openFilePicker = VBOParser.openFilePicker;
+function detectFormat(ext?: string): SessionFormat {
+  switch (ext) {
+    case 'ld': return 'motec';
+    case 'pds': return 'pds';
+    case 'vbo': return 'vbo';
+    default: throw new ParseError(`Unknown file extension: .${ext}`);
+  }
+}
 
-// Lap detection utilities
-export const detectLaps = LapDetection.detectLaps;
-export const findFastestLap = LapDetection.findFastestLap;
-export const calculateAverageLapTime = LapDetection.calculateAverageLapTime;
-export const findBestSectorTimes = LapDetection.findBestSectorTimes;
+async function parseBuffer(
+  data: Uint8Array,
+  format: SessionFormat,
+  fileURL: string,
+): Promise<Session> {
+  switch (format) {
+    case 'motec': {
+      const { parseMotec } = await import('./parsers/motec');
+      return parseMotec(data, fileURL);
+    }
+    case 'pds': {
+      const { parsePds } = await import('./parsers/pds');
+      return parsePds(data, fileURL);
+    }
+    case 'vbo': {
+      const { parseVbo } = await import('./parsers/vbo');
+      return parseVbo(data, fileURL);
+    }
+    default:
+      throw new ParseError(`Unsupported format: ${format}`);
+  }
+}

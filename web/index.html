@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RacingMagick Inspector</title>
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #12121a; --surface2: #1a1a25; --border: #2a2a3a;
+    --text: #e0e0e8; --text2: #8888a0; --accent: #4a9eff; --green: #4aff88;
+    --red: #ff4a6a; --yellow: #ffcc4a; --orange: #ff8844; --purple: #aa88ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono','Fira Code','Consolas',monospace; font-size: 13px; background: var(--bg); color: var(--text); line-height: 1.5; }
+  header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 15px; font-weight: 600; color: var(--accent); }
+  header .stats { color: var(--text2); font-size: 11px; }
+  #loading { padding: 40px; text-align: center; color: var(--text2); }
+  .session-list { display: grid; gap: 1px; background: var(--border); }
+  .session-card { background: var(--surface); cursor: pointer; transition: background 0.1s; }
+  .session-card:hover { background: var(--surface2); }
+  .session-card.active { background: var(--surface2); border-left: 3px solid var(--accent); }
+  .session-card.error { opacity: 0.5; }
+  .session-header { padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
+  .session-header .name { font-weight: 600; }
+  .session-header .meta { color: var(--text2); font-size: 11px; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+  .badge.motec { background: #2244aa; color: #88bbff; }
+  .badge.pds { background: #224422; color: #88ff88; }
+  .badge.vbo { background: #442244; color: #ff88ff; }
+  .detail-panel { display: none; padding: 16px; border-top: 1px solid var(--border); background: var(--bg); }
+  .detail-panel.visible { display: block; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .detail-section { background: var(--surface); border-radius: 6px; padding: 12px; border: 1px solid var(--border); }
+  .detail-section h3 { font-size: 11px; text-transform: uppercase; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.5px; }
+  .detail-section.full { grid-column: 1 / -1; }
+  .kv { display: flex; justify-content: space-between; padding: 2px 0; }
+  .kv .label { color: var(--text2); } .kv .value { font-weight: 500; }
+
+  /* Lap selector bar */
+  .lap-bar { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+  .lap-btn {
+    padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--surface); cursor: pointer; font-size: 11px; font-family: inherit;
+    color: var(--text2); transition: all 0.1s; position: relative;
+  }
+  .lap-btn:hover { background: var(--surface2); color: var(--text); }
+  .lap-btn.selected { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .lap-btn.fastest { border-color: var(--purple); }
+  .lap-btn .laptime { font-size: 10px; display: block; color: var(--text2); margin-top: -1px; }
+  .lap-btn.selected .laptime { color: #000a; }
+  .lap-btn.all-laps { color: var(--accent); border-color: var(--accent); opacity: 0.7; }
+  .lap-btn.all-laps.selected { opacity: 1; }
+
+  .lap-kind-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+  .lap-kind-dot.flying { background: var(--green); }
+  .lap-kind-dot.first-flying { background: var(--yellow); }
+  .lap-kind-dot.out-lap { background: var(--text2); }
+  .lap-kind-dot.in-lap { background: var(--text2); }
+  .lap-kind-dot.slow { background: var(--red); }
+
+  /* Traces */
+  .trace-canvas { width: 100%; height: 100px; background: var(--bg); border-radius: 4px; border: 1px solid var(--border); margin: 3px 0; cursor: crosshair; }
+  .trace-row { display: flex; align-items: center; gap: 8px; margin: 1px 0; }
+  .trace-label { width: 70px; font-size: 11px; color: var(--text2); text-align: right; flex-shrink: 0; }
+  .trace-value { width: 70px; font-size: 11px; color: var(--text); text-align: left; flex-shrink: 0; }
+
+  /* GPS */
+  .gps-canvas { width: 100%; height: 280px; background: var(--bg); border-radius: 4px; border: 1px solid var(--border); }
+
+  /* Video */
+  .video-container video { width: 100%; border-radius: 6px; background: #000; max-height: 400px; }
+  .video-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+
+  /* Availability */
+  .avail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 3px; }
+  .avail-item { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+  .avail-item .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .avail-item .dot.yes { background: var(--green); } .avail-item .dot.no { background: var(--border); }
+
+  .channel-list { display: flex; flex-wrap: wrap; gap: 3px; }
+  .channel-tag { display: inline-block; padding: 1px 5px; background: var(--surface2); border-radius: 3px; font-size: 10px; color: var(--text2); }
+  .warning-list { list-style: none; } .warning-list li { padding: 2px 0; color: var(--yellow); font-size: 11px; }
+  .warning-list li::before { content: '⚠ '; }
+
+  /* Fastest lap highlight */
+  .fastest-badge { background: var(--purple); color: #000; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>racingmagick</h1>
+  <span class="stats" id="stats"></span>
+</header>
+<div id="loading">Parsing fixtures...</div>
+<div id="content" style="display:none"><div class="session-list" id="sessions"></div></div>
+
+<script>
+let activeSession = null; // current session data for crosshair sync
+
+async function main() {
+  const sessions = await (await fetch('/api/sessions')).json();
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+  document.getElementById('stats').textContent =
+    `${sessions.length} files · ${sessions.filter(s=>!s.error).length} ok · ${sessions.filter(s=>s.error).length} err`;
+
+  const container = document.getElementById('sessions');
+
+  for (const s of sessions) {
+    const card = document.createElement('div');
+    card.className = `session-card${s.error ? ' error' : ''}`;
+    const hdr = document.createElement('div');
+    hdr.className = 'session-header';
+
+    if (s.error) {
+      hdr.innerHTML = `<div><span class="badge ${s.format}">${s.format}</span> <span class="name">${s.file}</span></div><span class="meta" style="color:var(--red)">✗ ${s.error}</span>`;
+      card.appendChild(hdr); container.appendChild(card); continue;
+    }
+
+    const best = s.fastestTime ? formatLapTime(s.fastestTime) : '';
+    hdr.innerHTML = `<div><span class="badge ${s.format}">${s.format}</span> <span class="name">${s.file}</span></div>
+      <span class="meta">${s.driver||'—'} · ${s.track||'—'} · ${s.lapCount} laps${best ? ' · best '+best:''}  · ${s.channelCount}ch · ${s.sampleRate}Hz${s.videos.length?' · 🎬':''}</span>`;
+
+    const detail = document.createElement('div');
+    detail.className = 'detail-panel';
+
+    hdr.addEventListener('click', () => {
+      const wasActive = card.classList.contains('active');
+      document.querySelectorAll('.session-card').forEach(c=>c.classList.remove('active'));
+      document.querySelectorAll('.detail-panel').forEach(p=>{p.classList.remove('visible');p.innerHTML='';});
+      if (!wasActive) {
+        card.classList.add('active');
+        detail.classList.add('visible');
+        activeSession = s;
+        renderDetail(detail, s);
+      } else {
+        activeSession = null;
+      }
+    });
+
+    card.appendChild(hdr); card.appendChild(detail); container.appendChild(card);
+  }
+}
+
+function renderDetail(el, s) {
+  const hasFlags = s.has || {};
+  el.innerHTML = `
+    <div class="detail-grid">
+      <div class="detail-section">
+        <h3>Session</h3>
+        ${kv('Driver',s.driver||'—')}${kv('Vehicle',s.vehicle||'—')}${kv('Track',s.track||'—')}
+        ${kv('Date',s.date?new Date(s.date).toLocaleDateString():'—')}
+        ${kv('Duration',formatTime(s.duration))}${kv('Distance',s.totalDistance>0?(s.totalDistance/1000).toFixed(1)+' km':'—')}
+        ${kv('Samples',s.sampleCount.toLocaleString()+' @ '+s.sampleRate+'Hz')}
+      </div>
+      <div class="detail-section">
+        <h3>Availability</h3>
+        <div class="avail-grid">${Object.entries(hasFlags).map(([k,v])=>`<div class="avail-item"><span class="dot ${v?'yes':'no'}"></span>${k}</div>`).join('')}</div>
+      </div>
+      <div class="detail-section full">
+        <h3>Lap Selection</h3>
+        <div class="lap-bar" id="lap-bar"></div>
+      </div>
+      <div class="detail-section full">
+        <h3>Traces <span id="trace-scope" style="color:var(--accent);font-size:10px"></span></h3>
+        <div id="traces-container"></div>
+      </div>
+      ${s.gpsTrace?`<div class="detail-section full"><h3>GPS Track</h3><canvas class="gps-canvas" id="gps-canvas"></canvas></div>`:''}
+      ${s.videos.length?`<div class="detail-section full"><h3>Video</h3>${s.videos.map(v=>`<div class="video-container"><div class="video-label">${v.filename}</div><video id="session-video" controls preload="metadata" src="${v.url}"></video></div>`).join('')}</div>`:''}
+      <div class="detail-section">
+        <h3>Channels (${s.channelCount})</h3>
+        <div class="channel-list">${s.channels.map(c=>`<span class="channel-tag">${c}</span>`).join('')}</div>
+        ${(s.warnings||[]).length?`<h3 style="margin-top:8px">Warnings</h3><ul class="warning-list">${s.warnings.map(w=>`<li>${w.message}</li>`).join('')}</ul>`:''}
+      </div>
+      <div class="detail-section" id="lap-details-section" style="display:none">
+        <h3>Selected Lap</h3>
+        <div id="lap-details"></div>
+      </div>
+    </div>`;
+
+  buildLapBar(el, s);
+  selectLap(el, s, -1); // start with full session
+}
+
+function buildLapBar(el, s) {
+  const bar = el.querySelector('#lap-bar');
+  // "All" button
+  const allBtn = document.createElement('button');
+  allBtn.className = 'lap-btn all-laps selected';
+  allBtn.textContent = 'ALL';
+  allBtn.onclick = () => selectLap(el, s, -1);
+  bar.appendChild(allBtn);
+
+  for (const lap of s.laps) {
+    const btn = document.createElement('button');
+    const isFastest = s.fastestTime && Math.abs(lap.time - s.fastestTime) < 1;
+    btn.className = `lap-btn${isFastest ? ' fastest' : ''}`;
+    btn.dataset.lapIndex = lap.index;
+    const isTimed = lap.kind === 'flying' || lap.kind === 'first-flying';
+    btn.innerHTML = `<span class="lap-kind-dot ${lap.kind}"></span>${lap.label}${isTimed && lap.time > 0 ? `<span class="laptime">${formatLapTime(lap.time)}</span>` : ''}`;
+    if (isFastest) btn.innerHTML += '<span class="fastest-badge">P</span>';
+    btn.onclick = () => selectLap(el, s, lap.index);
+    bar.appendChild(btn);
+  }
+}
+
+function selectLap(el, s, lapIndex) {
+  // Update button states
+  el.querySelectorAll('.lap-btn').forEach(b => {
+    b.classList.toggle('selected',
+      lapIndex === -1 ? b.classList.contains('all-laps') : parseInt(b.dataset.lapIndex) === lapIndex);
+  });
+
+  const isAll = lapIndex === -1;
+  const lap = isAll ? null : s.laps.find(l => l.index === lapIndex);
+  const traces = isAll ? s.traces : (lap?.traces || s.traces);
+  const gps = isAll ? s.gpsTrace : (lap?.gpsTrace || s.gpsTrace);
+
+  el.querySelector('#trace-scope').textContent = isAll ? '(full session)' : `(${lap.label} — ${formatLapTime(lap.time)})`;
+
+  renderTraces(el, traces, s, lap);
+  renderGPS(el, gps);
+
+  // Lap details panel
+  const detailSection = el.querySelector('#lap-details-section');
+  const detailEl = el.querySelector('#lap-details');
+  if (lap && detailSection) {
+    detailSection.style.display = '';
+    const delta = s.fastestTime && lap.time > 0 ? lap.time - s.fastestTime : null;
+    detailEl.innerHTML = `
+      ${kv('Kind', lap.kind)}
+      ${kv('Time', formatLapTime(lap.time))}
+      ${delta !== null && delta > 0 ? kv('Delta', '+' + (delta/1000).toFixed(3) + 's') : ''}
+      ${kv('Distance', lap.distance > 0 ? (lap.distance/1000).toFixed(2)+' km' : '—')}
+      ${kv('Samples', lap.sampleCount?.toLocaleString() || '—')}
+    `;
+  } else if (detailSection) {
+    detailSection.style.display = 'none';
+  }
+
+  // Jump video to lap start
+  const video = el.querySelector('#session-video');
+  if (video && lap && !isAll) {
+    // VBO: aviSyncTime gives us direct video time mapping
+    // For now, estimate: video starts roughly at session start,
+    // lap.startTime is seconds from session start
+    const videoOffset = lap.startTime || 0;
+    if (videoOffset > 0 && isFinite(videoOffset)) {
+      video.currentTime = videoOffset;
+    }
+  }
+}
+
+const TRACE_CONFIGS = [
+  { key: 'speed', label: 'Speed', color: '#4a9eff' },
+  { key: 'throttle', label: 'Throt', color: '#4aff88' },
+  { key: 'brakePressure', label: 'Brake', color: '#ff4a6a' },
+  { key: 'rpm', label: 'RPM', color: '#ffcc4a' },
+  { key: 'steering', label: 'Steer', color: '#ff88ff' },
+  { key: 'gLat', label: 'G Lat', color: '#88ffcc' },
+  { key: 'gear', label: 'Gear', color: '#aa88ff' },
+];
+
+function renderTraces(container, traces, session, lap) {
+  const el = container.querySelector('#traces-container');
+  if (!el || !traces) return;
+  el.innerHTML = '';
+
+  const canvases = [];
+
+  for (const cfg of TRACE_CONFIGS) {
+    const data = traces[cfg.key];
+    if (!data || data.length === 0) continue;
+
+    const row = document.createElement('div');
+    row.className = 'trace-row';
+
+    const label = document.createElement('div');
+    label.className = 'trace-label';
+    label.textContent = cfg.label;
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'trace-canvas';
+    canvas.width = 1400;
+    canvas.height = 100;
+    canvas.dataset.traceKey = cfg.key;
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'trace-value';
+    valueEl.id = `val-${cfg.key}`;
+
+    row.appendChild(label);
+    row.appendChild(canvas);
+    row.appendChild(valueEl);
+    el.appendChild(row);
+
+    drawTrace(canvas, data, cfg.color);
+    canvases.push({ canvas, data, color: cfg.color, valueEl, cfg });
+  }
+
+  // Crosshair sync across all traces + video
+  const onMove = (e) => {
+    const rect = e.target.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+    for (const c of canvases) {
+      drawTrace(c.canvas, c.data, c.color, frac);
+      const idx = Math.round(frac * (c.data.length - 1));
+      const v = c.data[idx];
+      c.valueEl.textContent = v !== undefined ? v.toFixed(c.cfg.key === 'gear' ? 0 : 1) : '';
+    }
+
+    // Seek video to corresponding time
+    const video = container.querySelector('#session-video');
+    if (video) {
+      if (lap) {
+        // Within a lap: frac maps to [startTime, endTime]
+        const t = (lap.startTime || 0) + frac * ((lap.endTime || 0) - (lap.startTime || 0));
+        video.currentTime = t;
+      } else if (session.duration > 0) {
+        video.currentTime = frac * session.duration;
+      }
+    }
+  };
+
+  for (const c of canvases) {
+    c.canvas.addEventListener('mousemove', onMove);
+    c.canvas.addEventListener('mouseleave', () => {
+      drawTrace(c.canvas, c.data, c.color);
+      c.valueEl.textContent = '';
+    });
+  }
+}
+
+function drawTrace(canvas, data, color, crosshairFrac) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, w, h);
+  if (!data || data.length === 0) return;
+
+  let min = Infinity, max = -Infinity;
+  for (const v of data) { if (isFinite(v)) { if (v < min) min = v; if (v > max) max = v; } }
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const pad = 4;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - pad - ((data[i] - min) / range) * (h - 2 * pad);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Min/max
+  ctx.globalAlpha = 0.4; ctx.fillStyle = color; ctx.font = '10px monospace';
+  ctx.fillText(max.toFixed(1), 4, 12);
+  ctx.fillText(min.toFixed(1), 4, h - 4);
+
+  // Crosshair
+  if (crosshairFrac !== undefined) {
+    const cx = crosshairFrac * w;
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Value dot
+    const idx = Math.round(crosshairFrac * (data.length - 1));
+    const v = data[idx];
+    if (isFinite(v)) {
+      const dy = h - pad - ((v - min) / range) * (h - 2 * pad);
+      ctx.globalAlpha = 1; ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(cx, dy, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+function renderGPS(container, points) {
+  const canvas = container.querySelector('#gps-canvas');
+  if (!canvas || !points || points.length < 2) return;
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * 2; canvas.height = rect.height * 2;
+  ctx.scale(2, 2);
+  const w = rect.width, h = rect.height;
+  ctx.fillStyle = '#0a0a0f'; ctx.fillRect(0, 0, w, h);
+
+  let minLat=Infinity,maxLat=-Infinity,minLon=Infinity,maxLon=-Infinity;
+  for (const [lat,lon] of points) { if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat;if(lon<minLon)minLon=lon;if(lon>maxLon)maxLon=lon; }
+  const pad=20, midLat=(minLat+maxLat)/2, midLon=(minLon+maxLon)/2;
+  const cosLat=Math.cos(midLat*Math.PI/180);
+  const latR=maxLat-minLat||0.001, lonR=maxLon-minLon||0.001;
+  const scale=Math.min((w-2*pad)/(lonR*cosLat),(h-2*pad)/latR);
+  const cx=w/2, cy=h/2;
+
+  ctx.strokeStyle='#4a9eff'; ctx.lineWidth=1.5; ctx.globalAlpha=0.9; ctx.beginPath();
+  for (let i=0;i<points.length;i++){const[lat,lon]=points[i];const x=cx+(lon-midLon)*cosLat*scale;const y=cy-(lat-midLat)*scale;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+  ctx.stroke();
+
+  // S/F marker
+  const[sLat,sLon]=points[0];const sx=cx+(sLon-midLon)*cosLat*scale;const sy=cy-(sLat-midLat)*scale;
+  ctx.fillStyle='#ff4a6a';ctx.globalAlpha=1;ctx.beginPath();ctx.arc(sx,sy,4,0,Math.PI*2);ctx.fill();
+}
+
+function kv(label, value) { return `<div class="kv"><span class="label">${label}</span><span class="value">${value}</span></div>`; }
+
+function formatTime(sec) {
+  if (!sec || !isFinite(sec)) return '—';
+  const m = Math.floor(sec / 60);
+  return `${m}:${(sec%60).toFixed(3).padStart(6,'0')}`;
+}
+
+function formatLapTime(ms) {
+  if (!ms || !isFinite(ms) || ms <= 0) return '—';
+  const sec = ms / 1000;
+  const m = Math.floor(sec / 60);
+  return `${m}:${(sec%60).toFixed(3).padStart(6,'0')}`;
+}
+
+main();
+</script>
+</body>
+</html>

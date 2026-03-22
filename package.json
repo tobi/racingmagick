@@ -1,7 +1,7 @@
 {
-  "name": "@vbo-parser/core",
-  "version": "1.0.0",
-  "description": "A comprehensive TypeScript library for parsing and analyzing VBO (Vehicle Bus Observer) telemetry files from motorsport data acquisition systems",
+  "name": "racingmagick",
+  "version": "0.1.0",
+  "description": "Universal motorsport telemetry parser — MoTeC, Pi/Cosworth, VBOX into a normalized Session/Lap/ChannelMatrix model",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -15,63 +15,39 @@
   "files": [
     "dist",
     "src",
+    "schema",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "prepublishOnly": "bun run clean && bun run build && bun run test"
+    "prepublishOnly": "npm run clean && npm run build && npm run test"
   },
   "keywords": [
-    "vbo",
     "motorsport",
     "telemetry",
-    "data-acquisition",
+    "motec",
+    "cosworth",
+    "vbox",
     "racing",
-    "lap-analysis",
-    "gps",
-    "automotive",
+    "data-acquisition",
     "parser",
     "typescript"
   ],
-  "author": {
-    "name": "VBO Parser Team",
-    "url": "https://github.com/vbo-parser/core"
-  },
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/vbo-parser/core.git"
-  },
-  "bugs": {
-    "url": "https://github.com/vbo-parser/core/issues"
-  },
-  "homepage": "https://github.com/vbo-parser/core#readme",
-  "dependencies": {
-    "zod": "^3.25.76"
-  },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
-  },
-  "peerDependencies": {
-    "typescript": ">=4.5.0"
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=16.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
+    "node": ">=18.0.0"
   }
 }

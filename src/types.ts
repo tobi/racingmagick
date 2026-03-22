@@ -1,186 +1,202 @@
-import { z } from 'zod';
+// ── Error Types ──────────────────────────────────────────────────────
 
-// Core VBO data structures
-export const VBOChannelSchema = z.object({
-  name: z.string(),
-  unit: z.string(),
-  index: z.number(),
-});
-
-export const VBOHeaderSchema = z.object({
-  creationDate: z.date(),
-  channels: z.array(VBOChannelSchema),
-  units: z.array(z.string()),
-  sampleRate: z.number().optional(),
-  driverId: z.string().optional(),
-  vehicle: z.string().optional(),
-  version: z.string().optional(),
-});
-
-export const VBODataPointSchema = z.object({
-  satellites: z.number(),
-  time: z.number(),
-  latitude: z.number(),
-  longitude: z.number(),
-  velocity: z.number(),
-  heading: z.number(),
-  height: z.number(),
-  verticalVelocity: z.number(),
-  samplePeriod: z.number(),
-  solutionType: z.number(),
-  aviFileIndex: z.number(),
-  aviSyncTime: z.number(),
-  comboAcc: z.number(),
-  tcSlip: z.number(),
-  tcGain: z.number(),
-  ppsMap: z.number(),
-  epsMap: z.number(),
-  engMap: z.number(),
-  driverId: z.number(),
-  ambientTemperature: z.number(),
-  carOnJack: z.number(),
-  headrest: z.number(),
-  fuelProbe: z.number(),
-  tcActive: z.number(),
-  lapNumber: z.number(),
-  lapGainLoss: z.number(),
-  engineSpeed: z.number(),
-  steeringAngle: z.number(),
-  brakePressureFront: z.number(),
-  throttlePedal: z.number(),
-  vehicleSpeed: z.number(),
-  gear: z.number(),
-  comboG: z.number(),
-});
-
-export const VBOSectorSchema = z.object({
-  sectorNumber: z.number(),
-  startTime: z.number(),
-  endTime: z.number(),
-  sectorTime: z.number(),
-  startDistance: z.number(),
-  endDistance: z.number(),
-});
-
-export const VBOLapSchema = z.object({
-  lapNumber: z.number(),
-  startTime: z.number(),
-  endTime: z.number(),
-  lapTime: z.number(),
-  distance: z.number(),
-  sectors: z.array(VBOSectorSchema),
-  dataPoints: z.array(VBODataPointSchema),
-  isValid: z.boolean(),
-  fastestSector: z.number().optional(),
-  label: z.enum(['off-track', 'in-lap', 'out-lap', 'timed-lap']),
-});
-
-export const VBOTimingLineSchema = z.object({
-  type: z.enum(['Start', 'Split']),
-  start: z.object({
-    latitude: z.number(),
-    longitude: z.number(),
-  }),
-  end: z.object({
-    latitude: z.number(),
-    longitude: z.number(),
-  }),
-  name: z.string(),
-});
-
-export const VBOCircuitInfoSchema = z.object({
-  country: z.string().optional(),
-  circuit: z.string().optional(),
-  timingLines: z.array(VBOTimingLineSchema),
-});
-
-export const VBOVideoFileSchema = z.object({
-  filename: z.string(),
-  index: z.number(),
-});
-
-export const VBOSessionSchema = z.object({
-  filePath: z.string(),
-  videos: z.array(VBOVideoFileSchema),
-  header: VBOHeaderSchema,
-  laps: z.array(VBOLapSchema),
-  fastestLap: VBOLapSchema.optional(),
-  totalTime: z.number(),
-  trackLength: z.number().optional(),
-  dataPoints: z.array(VBODataPointSchema),
-  circuitInfo: VBOCircuitInfoSchema,
-});
-
-// Inferred types
-export type VBOHeader = z.infer<typeof VBOHeaderSchema>;
-export type VBOChannel = z.infer<typeof VBOChannelSchema>;
-export type VBODataPoint = z.infer<typeof VBODataPointSchema>;
-export type VBOLap = z.infer<typeof VBOLapSchema>;
-export type VBOSector = z.infer<typeof VBOSectorSchema>;
-export type VBOTimingLine = z.infer<typeof VBOTimingLineSchema>;
-export type VBOCircuitInfo = z.infer<typeof VBOCircuitInfoSchema>;
-export type VBOVideoFile = z.infer<typeof VBOVideoFileSchema>;
-export type VBOSession = z.infer<typeof VBOSessionSchema>;
-
-// Utility types
-export interface TrackPoint {
-  latitude: number;
-  longitude: number;
-  distance: number;
-  speed?: number;
-  time: number;
-}
-
-// Parser options
-export interface VBOParserOptions {
-  /**
-   * Whether to calculate lap data automatically
-   * @default true
-   */
-  calculateLaps?: boolean;
-
-  /**
-   * Custom column name mappings for VBO files with non-standard headers
-   */
-  customColumnMappings?: Record<string, keyof VBODataPoint>;
-
-  /**
-   * Whether to validate data points against schema (slower but safer)
-   * @default false
-   */
-  validateDataPoints?: boolean;
-
-  /**
-   * Maximum number of data points to parse (for large files)
-   * @default undefined (no limit)
-   */
-  maxDataPoints?: number;
-}
-
-// File system types for browser compatibility
-export interface FileSystemFileHandle {
-  readonly kind: 'file';
-  readonly name: string;
-  getFile(): Promise<File>;
-}
-
-export interface FileSystemDirectoryHandle {
-  readonly kind: 'directory';
-  readonly name: string;
-  values(): AsyncIterableIterator<FileSystemFileHandle | FileSystemDirectoryHandle>;
-}
-
-// Error types
-export class VBOParseError extends Error {
-  constructor(message: string, public readonly cause?: Error) {
+export class ParseError extends Error {
+  constructor(message: string, public readonly format?: string) {
     super(message);
-    this.name = 'VBOParseError';
+    this.name = 'ParseError';
   }
 }
 
-export class VBOValidationError extends VBOParseError {
-  constructor(message: string, public readonly validationErrors: z.ZodError) {
+export class LapError extends Error {
+  constructor(message: string) {
     super(message);
-    this.name = 'VBOValidationError';
+    this.name = 'LapError';
   }
+}
+
+// ── Warnings ─────────────────────────────────────────────────────────
+
+export type WarningCode =
+  | 'low-gps-satellites'
+  | 'missing-optional-channel'
+  | 'suspicious-data-range'
+  | 'low-sample-rate'
+  | 'gps-quality-poor'
+  | 'no-lap-boundaries'
+  | 'distance-channel-missing'
+  | 'throttle-fallback'
+  | 'coordinate-conversion';
+
+export interface SessionWarning {
+  readonly code: WarningCode;
+  readonly message: string;
+  readonly channel?: string;
+}
+
+// ── Enums ────────────────────────────────────────────────────────────
+
+export enum LapKind {
+  OutLap = 'out-lap',
+  InLap = 'in-lap',
+  Flying = 'flying',
+  FirstFlying = 'first-flying',
+  Slow = 'slow',
+}
+
+export type SessionFormat = 'motec' | 'pds' | 'vbo';
+
+export type PositionSource = 'gps' | 'distance' | 'speed-integrated';
+
+// ── Well-Known Channel Indices ───────────────────────────────────────
+// The first 5 rows are always allocated and always populated.
+
+export const CH_TIME = 0;
+export const CH_DISTANCE = 1;
+export const CH_TRACK_POSITION = 2;
+export const CH_SPEED = 3;
+export const CH_THROTTLE = 4;
+
+export const WELL_KNOWN_CHANNELS = ['time', 'distance', 'trackPosition', 'speed', 'throttle'] as const;
+
+// ── Channel Availability ─────────────────────────────────────────────
+
+export interface ChannelAvailability {
+  readonly gps: boolean;
+  readonly gpsAlt: boolean;
+  readonly gpsSpeed: boolean;
+  readonly gpsSatellites: boolean;
+  readonly gpsFix: boolean;
+  readonly rpm: boolean;
+  readonly gear: boolean;
+  readonly throttleActual: boolean;
+  readonly brakePedal: boolean;
+  readonly brakePressure: boolean;
+  readonly brakePressureRear: boolean;
+  readonly clutchPedal: boolean;
+  readonly clutchActual: boolean;
+  readonly steering: boolean;
+  readonly tcCut: boolean;
+  readonly tcSlip: boolean;
+  readonly gLong: boolean;
+  readonly gLat: boolean;
+  readonly heading: boolean;
+  readonly yawRate: boolean;
+  readonly wheelSpeeds: boolean;
+  readonly dampers: boolean;
+  // Tire pressures (bar)
+  readonly tirePressures: boolean;
+  // Tire temperatures (°C)
+  readonly tireTemps: boolean;
+  // Tire slip angles (degrees)
+  readonly tireSlipAngles: boolean;
+  // Tire slip ratios (dimensionless)
+  readonly tireSlipRatios: boolean;
+  // Tire wear (0.0–1.0)
+  readonly tireWear: boolean;
+  // Tire load (N)
+  readonly tireLoads: boolean;
+}
+
+// ── Circuit Info ─────────────────────────────────────────────────────
+
+export interface TimingLine {
+  readonly type: 'start' | 'split';
+  readonly name: string;
+  readonly start: { lat: number; lon: number };
+  readonly end: { lat: number; lon: number };
+}
+
+export interface CircuitInfo {
+  readonly name: string | null;
+  readonly country: string | null;
+  readonly timingLines: ReadonlyArray<TimingLine>;
+}
+
+// ── Sector Time ──────────────────────────────────────────────────────
+
+export interface SectorTime {
+  readonly sector: number;
+  readonly name: string;
+  readonly time: number; // milliseconds
+  readonly startPosition: number; // 0.0–1.0
+  readonly endPosition: number; // 0.0–1.0
+}
+
+// ── Stint ────────────────────────────────────────────────────────────
+
+export interface Stint {
+  readonly stintNumber: number;
+  readonly outLap: LapInfo | null;
+  readonly inLap: LapInfo | null;
+  readonly laps: ReadonlyArray<LapInfo>;
+  readonly fastestLap: LapInfo | null;
+}
+
+// ── Raw Parsed Channel ───────────────────────────────────────────────
+// Intermediate representation from format parsers before normalization.
+
+export interface RawChannel {
+  readonly name: string;
+  readonly unit: string;
+  readonly frequency: number; // Hz
+  readonly samples: Float64Array;
+}
+
+// ── Lap Boundary ─────────────────────────────────────────────────────
+
+export interface LapBoundary {
+  readonly timeSeconds: number;
+  /** Index into the highest-rate channel (after resampling). */
+  sampleIndex?: number;
+}
+
+// ── Session Data (input to Session constructor) ──────────────────────
+
+export interface SessionData {
+  readonly format: SessionFormat;
+  readonly driver: string;
+  readonly vehicle: string;
+  readonly track: string;
+  readonly date: Date;
+  readonly rawChannels: RawChannel[];
+  readonly lapBoundaries: LapBoundary[];
+  readonly circuit: CircuitInfo | null;
+  readonly warnings: SessionWarning[];
+  readonly fileURL: string;
+  // Video-related (optional, format-specific)
+  /** VBO: parsed [AVI] section info */
+  readonly vboAviFileIndex?: Float64Array;
+  readonly vboAviSyncTime?: Float64Array;
+  /** PDS/MoTeC: session start as Unix timestamp (from FIA_GpsTimeUTC or Global Time) */
+  readonly sessionStartUnix?: number;
+}
+
+// ── Lap Info (public interface for a lap) ────────────────────────────
+
+export interface LapInfo {
+  readonly lapIndex: number;
+  readonly lapNumber: number | null;
+  readonly displayLabel: string;
+  readonly kind: LapKind;
+  readonly lapTime: number; // milliseconds
+  readonly startTime: number;
+  readonly endTime: number;
+  readonly sampleRate: number;
+  readonly sampleCount: number;
+  readonly totalDistance: number;
+  readonly startIdx: number;
+  readonly endIdx: number;
+  readonly sectors: ReadonlyArray<SectorTime> | null;
+  readonly positionSource: PositionSource;
+}
+
+// ── LapDelta ─────────────────────────────────────────────────────────
+
+export interface LapDelta {
+  readonly totalDelta: number; // ms
+  readonly worstPosition: number; // 0.0–1.0
+  readonly bestPosition: number;
+  readonly sectorDeltas: ReadonlyArray<{ sector: number; delta: number }> | null;
+  deltaAt(trackPosition: number): number;
+  deltaTrace(resolution?: number): Float64Array;
 }
