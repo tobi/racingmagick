@@ -141,31 +141,31 @@ function buildVboContent(session: Session): string {
   // Plus any ECU channels we have
   const vboColumns = buildColumnMap(session);
 
-  // [header] section — channel names (no spaces)
+  // [header] section — full channel names (spaces allowed, one per line)
   lines.push('[header]');
   for (const col of vboColumns) {
-    lines.push(col.vboName.replace(/\s+/g, '_'));
+    lines.push(col.headerName);
   }
   lines.push('');
 
-  // [channel units] section
+  // [channel units] section — empty string for dimensionless, not (null)
   lines.push('[channel units]');
   for (const col of vboColumns) {
-    lines.push(col.unit || '(null)');
+    lines.push(col.unit || '');
   }
   lines.push('');
 
   // [comments] section
   lines.push('[comments]');
-  lines.push(`Converted by racingmagick from ${session.format} format`);
+  lines.push(`(c) racingmagick — converted from ${session.format}`);
   if (session.driver) lines.push(`Driver: ${session.driver}`);
   if (session.vehicle) lines.push(`Vehicle: ${session.vehicle}`);
   if (session.track) lines.push(`Track: ${session.track}`);
   lines.push('');
 
-  // [column names] section — names MUST NOT contain spaces (VBO is space-delimited)
+  // [column names] section — short names, NO spaces (space-delimited line)
   lines.push('[column names]');
-  lines.push(vboColumns.map(c => c.vboName.replace(/\s+/g, '_')).join(' '));
+  lines.push(vboColumns.map(c => c.columnName).join(' '));
   lines.push('');
 
   // [laptiming] section
@@ -198,7 +198,10 @@ function buildVboContent(session: Session): string {
 // ── Column definitions ───────────────────────────────────────────────
 
 interface VboColumn {
-  vboName: string;
+  /** Full name for [header] section (can have spaces) */
+  headerName: string;
+  /** Short name for [column names] section (no spaces) */
+  columnName: string;
   unit: string;
   format: (i: number, matrix: any, session: Session, hz: number, baseTime: number) => string;
 }
@@ -209,7 +212,7 @@ function buildColumnMap(session: Session): VboColumn[] {
 
   // satellites
   cols.push({
-    vboName: 'satellites',
+    headerName: 'satellites', columnName: 'sats',
     unit: '',
     format: (i) => {
       const row = matrix.row('gpsSatellites');
@@ -219,7 +222,7 @@ function buildColumnMap(session: Session): VboColumn[] {
 
   // time — VBO uses HHMMSS.mmm format
   cols.push({
-    vboName: 'time',
+    headerName: 'time', columnName: 'time',
     unit: '',
     format: (i, m, s, hz, baseTime) => {
       const sessionSecs = matrix.channels[0][i]!;
@@ -233,106 +236,69 @@ function buildColumnMap(session: Session): VboColumn[] {
     },
   });
 
-  // latitude — VBO uses NMEA DDMM.MMMMM format (or decimal if no GPS)
-  cols.push({
-    vboName: 'latitude',
-    unit: '',
-    format: (i) => {
-      const row = matrix.row('gpsLat');
-      if (!row || row[i] === 0) return '+0000.00000000';
-      return formatNmea(row[i]!);
-    },
-  });
+  // latitude — VBO uses NMEA DDMM.MMMMM
+  cols.push({ headerName: 'latitude', columnName: 'lat', unit: '', format: (i) => {
+    const row = matrix.row('gpsLat');
+    return (!row || row[i] === 0) ? '+0000.00000000' : formatNmea(row[i]!);
+  }});
 
   // longitude
-  cols.push({
-    vboName: 'longitude',
-    unit: '',
-    format: (i) => {
-      const row = matrix.row('gpsLon');
-      if (!row || row[i] === 0) return '+00000.00000000';
-      return formatNmea(row[i]!);
-    },
-  });
+  cols.push({ headerName: 'longitude', columnName: 'long', unit: '', format: (i) => {
+    const row = matrix.row('gpsLon');
+    return (!row || row[i] === 0) ? '+00000.00000000' : formatNmea(row[i]!);
+  }});
 
-  // velocity (km/h)
-  cols.push({
-    vboName: 'velocity_kmh',
-    unit: 'km/h',
-    format: (i) => {
-      const v = matrix.channels[3][i]!; // speed
-      return formatSci(v);
-    },
-  });
+  // velocity (km/h) — standard VBOX GPS speed
+  cols.push({ headerName: 'velocity kmh', columnName: 'velocity', unit: 'kmh', format: (i) => {
+    return formatSci(matrix.channels[3][i]!);
+  }});
 
-  // heading (degrees)
-  cols.push({
-    vboName: 'heading',
-    unit: '',
-    format: (i) => {
-      const row = matrix.row('heading');
-      return row ? row[i]!.toFixed(3).padStart(7, '0') : '000.000';
-    },
-  });
+  // heading
+  cols.push({ headerName: 'heading', columnName: 'heading', unit: '', format: (i) => {
+    const row = matrix.row('heading');
+    return row ? row[i]!.toFixed(3).padStart(7, '0') : '000.000';
+  }});
 
-  // height (meters)
-  cols.push({
-    vboName: 'height',
-    unit: '',
-    format: (i) => {
-      const row = matrix.row('gpsAlt');
-      return row ? formatSigned(row[i]!, 2) : '+00000.00';
-    },
-  });
+  // height
+  cols.push({ headerName: 'height', columnName: 'height', unit: '', format: (i) => {
+    const row = matrix.row('gpsAlt');
+    return row ? formatSigned(row[i]!, 2) : '+00000.00';
+  }});
 
   // vertical velocity
-  cols.push({
-    vboName: 'vertical_velocity_m/s',
-    unit: 'm/s',
-    format: () => '+0000.00',
-  });
+  cols.push({ headerName: 'vertical velocity m/s', columnName: 'vert-vel', unit: 'm/s', format: () => '+0000.00' });
 
   // sample period
-  cols.push({
-    vboName: 'sampleperiod',
-    unit: '',
-    format: (_, __, ___, hz) => (1 / hz).toFixed(4).padStart(5, '0'),
-  });
+  cols.push({ headerName: 'sampleperiod', columnName: 'Tsample', unit: '', format: (_, __, ___, hz) => (1 / hz).toFixed(4).padStart(5, '0') });
 
   // solution type
-  cols.push({
-    vboName: 'solution_type',
-    unit: '',
-    format: (i) => {
-      const row = matrix.row('gpsFix');
-      return row ? pad2(Math.round(row[i]!)) : '00';
-    },
-  });
+  cols.push({ headerName: 'solution type', columnName: 'solution_type', unit: '', format: (i) => {
+    const row = matrix.row('gpsFix');
+    return row ? pad2(Math.round(row[i]!)) : '00';
+  }});
 
-  // ECU channels — add whatever we have
-  const ecuChannels: Array<{ canonical: string; vboName: string; unit: string }> = [
-    { canonical: 'speed', vboName: 'Vehicle_Speed', unit: 'km/h' },
-    { canonical: 'rpm', vboName: 'Engine_Speed', unit: 'RPM' },
-    { canonical: 'throttle', vboName: 'Throttle_Pedal', unit: '%' },
-    { canonical: 'brakePressure', vboName: 'Brake_Pressure_Front', unit: 'bar' },
-    { canonical: 'steering', vboName: 'Steering_Angle', unit: '' },
-    { canonical: 'gear', vboName: 'Gear', unit: '' },
-    { canonical: 'gLong', vboName: 'ComboAcc', unit: 'G' },
-    { canonical: 'gLat', vboName: 'Combo_G', unit: 'G' },
-    // Lap_Number is synthesized from session.laps, not from raw channel
-    // { canonical: 'lapNumber', vboName: 'Lap_Number', unit: '' },
-    { canonical: 'wheelSpeedFL', vboName: 'whlspeed_FL', unit: 'km/h' },
-    { canonical: 'wheelSpeedFR', vboName: 'whlspeed_FR', unit: 'km/h' },
-    { canonical: 'wheelSpeedRL', vboName: 'whlspeed_RL', unit: 'km/h' },
-    { canonical: 'wheelSpeedRR', vboName: 'whlspeed_RR', unit: 'km/h' },
-    { canonical: 'tirePressureFL', vboName: 'Tire_Pressure_FL', unit: 'bar' },
-    { canonical: 'tirePressureFR', vboName: 'Tire_Pressure_FR', unit: 'bar' },
-    { canonical: 'tirePressureRL', vboName: 'Tire_Pressure_RL', unit: 'bar' },
-    { canonical: 'tirePressureRR', vboName: 'Tire_Pressure_RR', unit: 'bar' },
-    { canonical: 'tireTempFL', vboName: 'Tire_Temp_FL', unit: 'C' },
-    { canonical: 'tireTempFR', vboName: 'Tire_Temp_FR', unit: 'C' },
-    { canonical: 'tireTempRL', vboName: 'Tire_Temp_RL', unit: 'C' },
-    { canonical: 'tireTempRR', vboName: 'Tire_Temp_RR', unit: 'C' },
+  // ECU channels — headerName has spaces (for [header]), columnName has underscores (for [column names])
+  const ecuChannels: Array<{ canonical: string; headerName: string; columnName: string; unit: string }> = [
+    { canonical: 'speed', headerName: 'Vehicle_Speed', columnName: 'Vehicle_Speed', unit: 'kmh' },
+    { canonical: 'rpm', headerName: 'Engine_Speed', columnName: 'Engine_Speed', unit: 'RPM' },
+    { canonical: 'throttle', headerName: 'Throttle_Pedal', columnName: 'Throttle_Pedal', unit: '%' },
+    { canonical: 'brakePressure', headerName: 'Brake_Pressure_Front', columnName: 'Brake_Pressure_Front', unit: 'bar' },
+    { canonical: 'steering', headerName: 'Steering_Angle', columnName: 'Steering_Angle', unit: '' },
+    { canonical: 'gear', headerName: 'Gear', columnName: 'Gear', unit: '' },
+    { canonical: 'gLong', headerName: 'ComboAcc', columnName: 'ComboAcc', unit: 'G' },
+    { canonical: 'gLat', headerName: 'Combo_G', columnName: 'Combo_G', unit: 'G' },
+    { canonical: 'wheelSpeedFL', headerName: 'whlspeed_FL', columnName: 'whlspeed_FL', unit: 'km/h' },
+    { canonical: 'wheelSpeedFR', headerName: 'whlspeed_FR', columnName: 'whlspeed_FR', unit: 'km/h' },
+    { canonical: 'wheelSpeedRL', headerName: 'whlspeed_RL', columnName: 'whlspeed_RL', unit: 'km/h' },
+    { canonical: 'wheelSpeedRR', headerName: 'whlspeed_RR', columnName: 'whlspeed_RR', unit: 'km/h' },
+    { canonical: 'tirePressureFL', headerName: 'Tire_Pressure_FL', columnName: 'Tire_Pressure_FL', unit: 'bar' },
+    { canonical: 'tirePressureFR', headerName: 'Tire_Pressure_FR', columnName: 'Tire_Pressure_FR', unit: 'bar' },
+    { canonical: 'tirePressureRL', headerName: 'Tire_Pressure_RL', columnName: 'Tire_Pressure_RL', unit: 'bar' },
+    { canonical: 'tirePressureRR', headerName: 'Tire_Pressure_RR', columnName: 'Tire_Pressure_RR', unit: 'bar' },
+    { canonical: 'tireTempFL', headerName: 'Tire_Temp_FL', columnName: 'Tire_Temp_FL', unit: 'C' },
+    { canonical: 'tireTempFR', headerName: 'Tire_Temp_FR', columnName: 'Tire_Temp_FR', unit: 'C' },
+    { canonical: 'tireTempRL', headerName: 'Tire_Temp_RL', columnName: 'Tire_Temp_RL', unit: 'C' },
+    { canonical: 'tireTempRR', headerName: 'Tire_Temp_RR', columnName: 'Tire_Temp_RR', unit: 'C' },
   ];
 
   // Synthesized Lap_Number — increment at each lap boundary so the VBO
@@ -348,7 +314,7 @@ function buildColumnMap(session: Session): VboColumn[] {
       lapNums.fill(currentNum, lap.startIdx, Math.min(lap.endIdx, matrix.sampleCount));
     }
     cols.push({
-      vboName: 'Lap_Number',
+      headerName: 'Lap_Number', columnName: 'Lap_Number',
       unit: '',
       format: (i) => String(Math.round(lapNums[i]!)),
     });
@@ -359,13 +325,11 @@ function buildColumnMap(session: Session): VboColumn[] {
     if (!row) continue;
 
     cols.push({
-      vboName: ecu.vboName,
+      headerName: ecu.headerName, columnName: ecu.columnName,
       unit: ecu.unit,
       format: (i) => {
         let v = row[i]!;
-        // Throttle: convert 0-1 ratio back to 0-100% for VBO convention
         if (ecu.canonical === 'throttle') v *= 100;
-        // Speed is already in km/h, no conversion needed
         return formatSci(v);
       },
     });

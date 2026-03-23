@@ -25,8 +25,8 @@ describe('VBO writer', () => {
     expect(vboContent).toContain('[header]');
     expect(vboContent).toContain('[data]');
     expect(vboContent).toContain('[channel units]');
-    expect(vboContent).toContain('velocity_kmh');
-    expect(vboContent).toContain('Converted by racingmagick');
+    expect(vboContent).toContain('velocity kmh');
+    expect(vboContent).toContain('racingmagick');
 
     // Re-parse the written VBO
     const reSession = parseVbo(new Uint8Array(readFileSync(vboPath)), vboPath);
