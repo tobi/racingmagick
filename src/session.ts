@@ -22,6 +22,7 @@ export class Session {
   readonly fileURL: string;
   readonly format: SessionFormat;
   readonly driver: string;
+  readonly driverId: number | null;
   readonly vehicle: string;
   readonly track: string;
   readonly date: Date;
@@ -47,6 +48,7 @@ export class Session {
     this.track = data.track;
     this.date = data.date;
     this.circuit = data.circuit;
+    this.driverId = data.driverId ?? null;
 
     const warnings = [...data.warnings];
 

@@ -163,6 +163,8 @@ export interface SessionData {
   readonly circuit: CircuitInfo | null;
   readonly warnings: SessionWarning[];
   readonly fileURL: string;
+  /** Numeric driver identifier (VBO DriverID channel, first sample). */
+  readonly driverId?: number;
   // Video-related (optional, format-specific)
   /** VBO: parsed [AVI] section info */
   readonly vboAviFileIndex?: Float64Array;

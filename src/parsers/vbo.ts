@@ -410,9 +410,10 @@ export function parseVbo(data: Uint8Array, fileURL: string): Session {
     samples: timeSeconds,
   });
 
-  // Video data (captured during column processing)
+  // Video data and driver ID (captured during column processing)
   let vboAviFileIndex: Float64Array | undefined;
   let vboAviSyncTime: Float64Array | undefined;
+  let vboDriverId: number | undefined;
 
   // Process each data column
   for (let c = 0; c < numColumns; c++) {
@@ -435,6 +436,12 @@ export function parseVbo(data: Uint8Array, fileURL: string): Session {
       if (colNameLower === 'avifileindex') vboAviFileIndex = columns[c];
       if (colNameLower === 'avitime') vboAviSyncTime = columns[c];
       continue;
+    }
+
+    // Capture DriverID value for session metadata
+    if (colNameLower === 'driverid' || colNameLower === 'driver_id') {
+      const first = columns[c][0];
+      if (first !== undefined && first !== 0) vboDriverId = first;
     }
 
     // Map column name to header name for resolution
@@ -502,8 +509,14 @@ export function parseVbo(data: Uint8Array, fileURL: string): Session {
     timingLines,
   };
 
-  // Parse date
+  // Parse date — use file creation date + GPS UTC time from first sample
   const date = parseFileDate(sections.fileCreatedLine);
+  // firstTime (seconds since midnight UTC from GPS) is more accurate than
+  // the file creation timestamp which may be in local time
+  const gpsHours = Math.floor(firstTime / 3600);
+  const gpsMinutes = Math.floor((firstTime % 3600) / 60);
+  const gpsSeconds = Math.floor(firstTime % 60);
+  date.setUTCHours(gpsHours, gpsMinutes, gpsSeconds);
 
   // Build SessionData
   const sessionData: SessionData = {
@@ -517,6 +530,7 @@ export function parseVbo(data: Uint8Array, fileURL: string): Session {
     circuit: circuit.name || circuit.country || timingLines.length > 0 ? circuit : null,
     warnings,
     fileURL,
+    driverId: vboDriverId,
     vboAviFileIndex,
     vboAviSyncTime,
   };

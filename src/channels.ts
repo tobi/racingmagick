@@ -397,6 +397,7 @@ export const CHANNEL_PRIORITIES: Record<string, ChannelPriority[]> = {
   carOnJack: [['car on jack', null], ['pit limiter', null]],
   lapNumber: [['lap number', null]],
   lapGainLoss: [['lap gain loss', null]],
+  driverId: [['driverid', null], ['driver id', null], ['driver_id', null]],
 };
 
 export type CanonicalChannel = keyof typeof CHANNEL_PRIORITIES;
