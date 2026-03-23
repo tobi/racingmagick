@@ -8,6 +8,7 @@ import { parsePds } from '../src/parsers/pds';
 import { parseVbo } from '../src/parsers/vbo';
 import { saveVbo } from '../src/writers/vbo';
 import { lint } from '../src/lint';
+import { scoreFilenameMatch } from '../src/video';
 import type { Session } from '../src/session';
 
 const FIXTURES = join(__dirname, '..', 'fixtures');
@@ -82,7 +83,7 @@ async function main() {
       const ext = extname(vf);
       const videoOutPath = join(outDir, `${outName}_${String(i + 1).padStart(4, '0')}${ext}`);
       try {
-        copyFileFollowingSymlinks(vf, videoOutPath);
+        await copyFileFollowingSymlinks(vf, videoOutPath);
         console.log(`  🎬 ${videoOutPath}`);
       } catch (err: any) {
         console.log(`  ⚠ video copy failed: ${err.message.slice(0, 60)}`);
@@ -142,27 +143,30 @@ function inferFromFilename(filename: string, field: 'driver' | 'car' | 'track'):
 /** Find video files matching a telemetry filename in the same directory. */
 function findMatchingVideos(telemetryFilename: string, dir: string): string[] {
   const stem = telemetryFilename.replace(/\.[^.]+$/, '');
-  const allFiles = readdirSync(dir).filter(f => /\.(mp4|mov|mkv|MOV)$/i.test(f));
+  const allFiles = readdirSync(dir).filter(f => /\.(mp4|mov|mkv|MOV)$/i.test(f)).filter(f => !f.includes('_keyframed'));
 
-  // Prefer keyframed, then prefix match, then fuzzy
-  const results: string[] = [];
-  for (const f of allFiles) {
-    const vStem = f.replace(/\.[^.]+$/, '').replace(/_keyframed$/, '');
-    if (vStem.startsWith(stem) || stem.startsWith(vStem.replace(/_\d{4}$/, ''))) {
-      // Prefer keyframed version
-      const kf = f.replace(/\.(mp4|mov|MOV)$/i, '_keyframed.mp4');
-      if (allFiles.includes(kf)) {
-        if (!results.includes(join(dir, kf))) results.push(join(dir, kf));
-      } else {
-        results.push(join(dir, f));
-      }
-    }
-  }
-  return results;
+  // Score each video: prefix match (50) or fuzzy token match
+  const scored = allFiles.map(f => {
+    const vStem = f.replace(/\.[^.]+$/, '');
+    const prefix = vStem.startsWith(stem) || stem.startsWith(vStem.replace(/_\d{4}$/, '')) ? 50 : 0;
+    const fuzzy = scoreFilenameMatch(stem, vStem);
+    return { file: f, score: Math.max(prefix, fuzzy) };
+  }).filter(s => s.score >= 5).sort((a, b) => b.score - a.score);
+
+  // Only keep best match (or all prefix matches for multi-file VBO)
+  const best = scored.length > 0 ? scored[0]!.score : 0;
+  const top = best >= 50 ? scored.filter(s => s.score >= 50) : scored.slice(0, 1);
+
+  return top.map(s => {
+    // Prefer keyframed version
+    const kf = s.file.replace(/\.(mp4|mov|MOV)$/i, '_keyframed.mp4');
+    const fullKf = join(dir, kf);
+    return existsSync(fullKf) ? fullKf : join(dir, s.file);
+  });
 }
 
 /** Copy a file, resolving symlinks first (works with NAS symlinks). */
-function copyFileFollowingSymlinks(src: string, dst: string): void {
+async function copyFileFollowingSymlinks(src: string, dst: string): Promise<void> {
   let realSrc: string;
   try {
     realSrc = realpathSync(src);
@@ -170,7 +174,6 @@ function copyFileFollowingSymlinks(src: string, dst: string): void {
     realSrc = src;
   }
 
-  // Stream copy to handle large files
   return new Promise<void>((resolve, reject) => {
     const rd = createReadStream(realSrc);
     const wr = createWriteStream(dst);
@@ -178,7 +181,7 @@ function copyFileFollowingSymlinks(src: string, dst: string): void {
     wr.on('error', reject);
     wr.on('finish', resolve);
     rd.pipe(wr);
-  }) as any;
+  });
 }
 
 main().catch(err => {
