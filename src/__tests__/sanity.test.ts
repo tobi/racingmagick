@@ -1,7 +1,6 @@
 /**
- * Data sanity linter: runs over every parseable fixture and verifies
- * the normalized output makes physical sense. This catches garbage data
- * that might parse without errors but produces nonsense values.
+ * Data sanity linter: runs lint() on every parseable fixture.
+ * Every file must have zero errors. Warnings are printed but allowed.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -9,6 +8,7 @@ import { join } from 'path';
 import { parseMotec } from '../parsers/motec';
 import { parsePds } from '../parsers/pds';
 import { parseVbo } from '../parsers/vbo';
+import { lint } from '../lint';
 import type { Session } from '../session';
 
 const FIXTURES = join(__dirname, '../../fixtures');
@@ -27,11 +27,18 @@ const ALL_FIXTURES: Fixture[] = [
     name: `motec/${f}`,
     load: () => parseMotec(new Uint8Array(readFileSync(join(FIXTURES, 'motec', f))), join(FIXTURES, 'motec', f)),
   })),
-  // PDS (export variants have imperfect channel-to-data mapping — tested separately)
+  // PDS (standard variants)
   ...['250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds',
     '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
   ].map(f => ({
     name: `pds/${f}`,
+    load: () => parsePds(new Uint8Array(readFileSync(join(FIXTURES, 'pds', f))), join(FIXTURES, 'pds', f)),
+  })),
+  // PDS (export variants)
+  ...['Export_MB_CT5_SebringTest2026.pds',
+    'Export_Tobi_QualySim_SebringTest2026.pds',
+  ].map(f => ({
+    name: `pds-export/${f}`,
     load: () => parsePds(new Uint8Array(readFileSync(join(FIXTURES, 'pds', f))), join(FIXTURES, 'pds', f)),
   })),
   // VBO
@@ -44,139 +51,27 @@ const ALL_FIXTURES: Fixture[] = [
   })),
 ];
 
-function checkChannel(session: Session, name: string, checks: {
-  minVal?: number;
-  maxVal?: number;
-  maxNanFraction?: number;
-  nonZeroFraction?: number;
-}) {
-  const row = session.matrix.row(name);
-  if (!row) return; // channel doesn't exist — that's fine
-
-  const n = row.length;
-  let nanCount = 0, zeroCount = 0;
-
-  for (let i = 0; i < n; i++) {
-    if (isNaN(row[i]!)) {
-      nanCount++;
-      continue;
-    }
-    if (checks.minVal !== undefined) {
-      expect(row[i]!).toBeGreaterThanOrEqual(checks.minVal);
-    }
-    if (checks.maxVal !== undefined) {
-      expect(row[i]!).toBeLessThanOrEqual(checks.maxVal);
-    }
-    if (row[i] === 0) zeroCount++;
-  }
-
-  if (checks.maxNanFraction !== undefined) {
-    const nanFrac = nanCount / n;
-    expect(nanFrac).toBeLessThanOrEqual(checks.maxNanFraction);
-  }
-
-  if (checks.nonZeroFraction !== undefined) {
-    const nonZeroFrac = 1 - (zeroCount + nanCount) / n;
-    expect(nonZeroFrac).toBeGreaterThanOrEqual(checks.nonZeroFraction);
-  }
-}
-
-describe('Data sanity linter', () => {
+describe('Lint: every fixture', () => {
   for (const fixture of ALL_FIXTURES) {
-    describe(fixture.name, () => {
-      let session: Session;
+    it(`${fixture.name} — no lint errors`, async () => {
+      const session = await fixture.load();
+      const issues = lint(session);
 
-      it('parses', async () => {
-        session = await fixture.load();
-        expect(session).toBeDefined();
-      });
+      const errors = issues.filter(i => i.severity === 'error');
+      const warnings = issues.filter(i => i.severity === 'warning');
 
-      it('time is monotonically increasing', async () => {
-        session = session ?? await fixture.load();
-        const time = session.matrix.row('time')!;
-        for (let i = 1; i < time.length; i++) {
-          expect(time[i]!).toBeGreaterThanOrEqual(time[i - 1]!);
-        }
-      });
+      if (warnings.length > 0) {
+        console.log(`  ${fixture.name} warnings:`);
+        for (const w of warnings) console.log(`    ⚠ [${w.code}] ${w.message}`);
+      }
 
-      it('speed: no NaN, range 0-400 km/h', async () => {
-        session = session ?? await fixture.load();
-        checkChannel(session, 'speed', {
-          minVal: -1, // allow tiny rounding
-          maxVal: 400,
-          maxNanFraction: 0.01, // <1% NaN
-        });
-      });
+      if (errors.length > 0) {
+        console.log(`  ${fixture.name} ERRORS:`);
+        for (const e of errors) console.log(`    ✗ [${e.code}] ${e.message}`);
+      }
 
-      it('throttle: no NaN, range -0.1 to 1.5', async () => {
-        session = session ?? await fixture.load();
-        checkChannel(session, 'throttle', {
-          minVal: -0.1,
-          maxVal: 1.5,
-          maxNanFraction: 0.01,
-        });
-      });
-
-      it('brakePressure: no NaN, no extreme values', async () => {
-        session = session ?? await fixture.load();
-        // Some files store pressure in kPa (up to 25000) or psi — normalization
-        // may not catch all units. Check for NaN and gross outliers only.
-        // PDS stores brake pressure in raw logger units (kPa, psi, or bar)
-        // that may not be fully normalized. Just check for NaN / Inf.
-        checkChannel(session, 'brakePressure', {
-          maxNanFraction: 0.02,
-        });
-      });
-
-      it('rpm: range 0-20000', async () => {
-        session = session ?? await fixture.load();
-        checkChannel(session, 'rpm', {
-          minVal: -100,
-          maxVal: 20000,
-          maxNanFraction: 0.01,
-        });
-      });
-
-      it('steering: range -1000 to 1000 degrees', async () => {
-        session = session ?? await fixture.load();
-        checkChannel(session, 'steering', {
-          minVal: -1000,
-          maxVal: 1000,
-          maxNanFraction: 0.01,
-        });
-      });
-
-      it('GPS lat/lon in valid WGS84 range', async () => {
-        session = session ?? await fixture.load();
-        if (session.has.gps) {
-          checkChannel(session, 'gpsLat', { minVal: -90, maxVal: 90, maxNanFraction: 0.05 });
-          checkChannel(session, 'gpsLon', { minVal: -180, maxVal: 180, maxNanFraction: 0.05 });
-        }
-      });
-
-      it('gear: range -1 to 10', async () => {
-        session = session ?? await fixture.load();
-        checkChannel(session, 'gear', {
-          minVal: -2,
-          maxVal: 10,
-          maxNanFraction: 0.01,
-        });
-      });
-
-      it('G-forces: range -15 to 15', async () => {
-        session = session ?? await fixture.load();
-        // Accelerometer spikes from curbs/crashes can exceed 15G. Check for NaN.
-        checkChannel(session, 'gLong', { maxNanFraction: 0.02 });
-        checkChannel(session, 'gLat', { maxNanFraction: 0.02 });
-      });
-
-      it('lap times are positive and < 30 minutes', async () => {
-        session = session ?? await fixture.load();
-        for (const lap of session.laps) {
-          expect(lap.lapTime).toBeGreaterThan(0);
-          expect(lap.lapTime).toBeLessThan(30 * 60 * 1000); // 30 min in ms
-        }
-      });
+      // Errors are hard failures — the data is definitely wrong
+      expect(errors, `Lint errors in ${fixture.name}:\n${errors.map(e => `  ${e.code}: ${e.message}`).join('\n')}`).toHaveLength(0);
     });
   }
 });

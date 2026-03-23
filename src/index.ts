@@ -19,6 +19,8 @@ export { scoreFilenameMatch, discoverVideoFiles, fixVideoCommands } from './vide
 export { extractVideoTelemetry, detectVideoLapCrossings, alignLapCrossings } from './video-extract';
 export type { VideoTelemetry, VideoGpsSample, VideoMetadata } from './video-extract';
 export { saveVbo, saveVboAndVideo } from './writers/vbo';
+export { lint } from './lint';
+export type { LintIssue, IssueSeverity } from './lint';
 
 /**
  * Parse any supported telemetry file.
