@@ -68,6 +68,12 @@ export function classifyLap(
     return LapKind.Slow;
   }
 
+  // Partial lap: too short to be real (<30s). These are fragments at
+  // session start/end where recording was cut mid-lap.
+  if (lapDuration < 30) {
+    return LapKind.Slow;
+  }
+
   // First flying: previous was out-lap
   if (prevLap?.kind === LapKind.OutLap) {
     return LapKind.FirstFlying;

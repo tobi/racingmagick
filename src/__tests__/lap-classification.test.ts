@@ -24,10 +24,10 @@ function makeSimpleMatrix(speedProfile: number[], hz: number = 10): ChannelMatri
 }
 
 describe('classifyLap', () => {
-  it('classifies a flying lap (constant high speed)', () => {
-    const speed = new Array(100).fill(200);
+  it('classifies a flying lap (constant high speed, >30s)', () => {
+    const speed = new Array(400).fill(200); // 40s at 10Hz
     const m = makeSimpleMatrix(speed);
-    const kind = classifyLap({ startIdx: 0, endIdx: 100 }, m, null);
+    const kind = classifyLap({ startIdx: 0, endIdx: 400 }, m, null);
     expect(kind).toBe(LapKind.Flying);
   });
 
@@ -52,10 +52,10 @@ describe('classifyLap', () => {
   });
 
   it('classifies first-flying after out-lap', () => {
-    const speed = new Array(100).fill(200);
+    const speed = new Array(400).fill(200); // 40s at 10Hz
     const m = makeSimpleMatrix(speed);
     const kind = classifyLap(
-      { startIdx: 0, endIdx: 100 },
+      { startIdx: 0, endIdx: 400 },
       m,
       { kind: LapKind.OutLap },
     );
@@ -88,12 +88,12 @@ describe('buildLaps', () => {
   });
 
   it('splits correctly on boundaries', () => {
-    const speed = new Array(300).fill(200);
+    const speed = new Array(1200).fill(200); // 120s at 10Hz
     const m = makeSimpleMatrix(speed);
     const boundaries = [
       { timeSeconds: 0 },
-      { timeSeconds: 10 },
-      { timeSeconds: 20 },
+      { timeSeconds: 50 },
+      { timeSeconds: 100 },
     ];
     const laps = buildLaps(m, boundaries, 'distance');
     expect(laps.length).toBe(2);
@@ -103,24 +103,25 @@ describe('buildLaps', () => {
 
   it('numbers only flying laps', () => {
     // Create speed profile: out-lap → flying → flying → in-lap
+    // Each lap 40s (400 samples at 10Hz) to pass the >30s threshold
     const hz = 10;
     const speed: number[] = [];
-    // Out-lap: 10s, starts at 40, ends at 200
-    for (let i = 0; i < 100; i++) speed.push(i < 30 ? 40 : 200);
-    // Flying: 10s at 200
-    for (let i = 0; i < 100; i++) speed.push(200);
-    // Flying: 10s at 200
-    for (let i = 0; i < 100; i++) speed.push(200);
-    // In-lap: 10s, starts at 200, ends at 40
-    for (let i = 0; i < 100; i++) speed.push(i < 70 ? 200 : 40);
+    // Out-lap: 40s, starts at 40, ends at 200
+    for (let i = 0; i < 400; i++) speed.push(i < 120 ? 40 : 200);
+    // Flying: 40s at 200
+    for (let i = 0; i < 400; i++) speed.push(200);
+    // Flying: 40s at 200
+    for (let i = 0; i < 400; i++) speed.push(200);
+    // In-lap: 40s, starts at 200, ends at 40
+    for (let i = 0; i < 400; i++) speed.push(i < 280 ? 200 : 40);
 
     const m = makeSimpleMatrix(speed, hz);
     const boundaries = [
       { timeSeconds: 0 },
-      { timeSeconds: 10 },
-      { timeSeconds: 20 },
-      { timeSeconds: 30 },
       { timeSeconds: 40 },
+      { timeSeconds: 80 },
+      { timeSeconds: 120 },
+      { timeSeconds: 160 },
     ];
     const laps = buildLaps(m, boundaries, 'distance');
 

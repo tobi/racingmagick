@@ -130,8 +130,16 @@ function extractSessionInfo(session, fullPath, formatDir) {
     return { file: f, score: Math.max(prefixScore, fuzzyScore) };
   }).filter(s => s.score >= 3).sort((a, b) => b.score - a.score);
 
+  // Only keep the best match (avoid false associations across sessions)
+  // If the best score is a prefix match (50), also include other prefix matches.
+  // Otherwise, only keep the single best fuzzy match.
+  const bestScore = scored.length > 0 ? scored[0].score : 0;
+  const topScored = bestScore >= 50
+    ? scored.filter(s => s.score >= 50)  // all prefix matches (multi-file VBO)
+    : scored.slice(0, 1);                // single best fuzzy match only
+
   const adjacentVideos = [];
-  for (const s of scored) {
+  for (const s of topScored) {
     // Check if a keyframed version exists
     const kfName = s.file.replace(/\.(mp4|mov|mkv|avi|MOV)$/i, '_keyframed.mp4');
     const hasKf = existsSync(join(dir, kfName));

@@ -221,10 +221,15 @@ export function lint(session: Session): LintIssue[] {
       issues.push({ severity: 'warning', code: 'lap-too-long', message: `${lap.displayLabel} is ${formatDuration(lapSecs)} — likely a single-lap session, not a misdetection`, channel: 'lap' });
     }
 
-    // No timed lap < 30 seconds (even kart tracks are 30s+)
-    // Warning, not error — lap classification may misidentify partial laps as flying
-    if (lapSecs < 30 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
-      issues.push({ severity: 'warning', code: 'lap-too-short', message: `${lap.displayLabel} is ${lapSecs.toFixed(1)}s — too short for a real lap, likely misclassified`, channel: 'lap' });
+    // Timed laps should be 1-9 minutes for any real circuit.
+    // <60s is a parser/classification bug (except karts, which are still 30s+)
+    if (lapSecs < 60 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
+      issues.push({
+        severity: lapSecs < 30 ? 'error' : 'warning',
+        code: 'lap-too-short',
+        message: `${lap.displayLabel} is ${lapSecs.toFixed(1)}s — ${lapSecs < 30 ? 'definitely' : 'probably'} not a real lap`,
+        channel: 'lap',
+      });
     }
 
     // Lap distance sanity (shortest real track ~1km, longest ~25km)
