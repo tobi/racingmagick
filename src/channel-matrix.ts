@@ -232,16 +232,18 @@ function resampleChannel(
   for (let i = 0; i < dst.length; i++) {
     const t = i / dstHz; // seconds
     const srcPos = t * srcHz; // fractional source index
-    const lo = Math.floor(srcPos);
+
+    // Clamp to valid source range — hold last value for shorter channels
+    const lo = Math.min(Math.floor(srcPos), srcCount - 1);
     const hi = Math.min(lo + 1, srcCount - 1);
 
     if (discrete) {
       // Nearest-neighbor
-      dst[i] = srcPos - lo < 0.5 ? src[lo] : src[hi];
+      dst[i] = srcPos - lo < 0.5 ? src[lo]! : src[hi]!;
     } else {
       // Linear interpolation
-      const frac = srcPos - lo;
-      dst[i] = src[lo] + (src[hi] - src[lo]) * frac;
+      const frac = Math.min(srcPos - lo, 1);
+      dst[i] = src[lo]! + (src[hi]! - src[lo]!) * frac;
     }
   }
 }
