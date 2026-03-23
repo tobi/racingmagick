@@ -5,7 +5,8 @@
  * the universal VBO format that VBOX tools can read.
  */
 
-import { writeFileSync, copyFileSync, existsSync } from 'fs';
+import { writeFileSync, existsSync, realpathSync, statSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join, basename, extname } from 'path';
 import type { Session } from '../session';
 
@@ -24,38 +25,100 @@ export function saveVbo(session: Session, directory: string, filename: string): 
   return outPath;
 }
 
+export interface SaveVideoOptions {
+  /** Re-encode video with h264+aac for browser compatibility and seekability. Default: true */
+  reencode?: boolean;
+  /** CRF quality (0=lossless, 18=visually lossless, 23=default). Default: 18 */
+  crf?: number;
+  /** Keyframe interval in frames. Default: 30 (1s at 30fps) */
+  gopSize?: number;
+}
+
 /**
- * Write a Session to a .vbo file and copy/link associated video files.
+ * Write a Session to a .vbo file and re-encode associated video files
+ * to browser-friendly h264 mp4 with proper keyframes.
  *
  * @param session - The parsed session to export
  * @param directory - Output directory
  * @param filename - Output filename (without extension)
- * @returns { vboPath, videoPath[] }
+ * @param options - Video encoding options
+ * @returns { vboPath, videoPaths[] }
  */
 export function saveVboAndVideo(
   session: Session,
   directory: string,
   filename: string,
+  options: SaveVideoOptions = {},
 ): { vboPath: string; videoPaths: string[] } {
   const vboPath = saveVbo(session, directory, filename);
   const videoPaths: string[] = [];
+  const { reencode = true, crf = 18, gopSize = 30 } = options;
 
-  // Copy associated video files
   if (session.video && session.video.files.length > 0) {
     for (let i = 0; i < session.video.files.length; i++) {
       const vf = session.video.files[i]!;
-      if (!existsSync(vf.path)) continue;
 
-      const ext = extname(vf.filename) || '.mp4';
-      const videoOutName = `${filename}_${String(i + 1).padStart(4, '0')}${ext}`;
-      const videoOutPath = join(directory, videoOutName);
+      // Resolve symlinks (NAS mounts)
+      let srcPath = vf.path;
+      try { srcPath = realpathSync(vf.path); } catch { /* use original */ }
+      if (!existsSync(srcPath)) continue;
 
-      copyFileSync(vf.path, videoOutPath);
-      videoPaths.push(videoOutPath);
+      const videoOutPath = join(directory, `${filename}_${String(i + 1).padStart(4, '0')}.mp4`);
+
+      if (reencode && findFfmpeg()) {
+        try {
+          reencodeVideo(srcPath, videoOutPath, crf, gopSize);
+          videoPaths.push(videoOutPath);
+        } catch (err: any) {
+          console.error(`  ffmpeg failed: ${err.message?.slice(0, 80)}`);
+        }
+      } else {
+        // Fallback: stream copy (no re-encode)
+        const { createReadStream, createWriteStream } = require('fs');
+        const rd = createReadStream(srcPath);
+        const wr = createWriteStream(videoOutPath);
+        rd.pipe(wr);
+        videoPaths.push(videoOutPath);
+      }
     }
   }
 
   return { vboPath, videoPaths };
+}
+
+// ── Video re-encoding ────────────────────────────────────────────────
+
+let _ffmpegPath: string | null | undefined;
+
+function findFfmpeg(): string | null {
+  if (_ffmpegPath !== undefined) return _ffmpegPath;
+  for (const p of ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg']) {
+    if (existsSync(p)) { _ffmpegPath = p; return p; }
+  }
+  _ffmpegPath = null;
+  return null;
+}
+
+/**
+ * Re-encode a video to h264+aac mp4 with:
+ * - CRF 18 (visually lossless, ~40-60% smaller than intra-only source)
+ * - Keyframe every 1s (seekable in browsers)
+ * - faststart (progressive download)
+ * - Same resolution, no rescaling
+ */
+function reencodeVideo(src: string, dst: string, crf: number, gopSize: number): void {
+  const ffmpeg = findFfmpeg()!;
+  execFileSync(ffmpeg, [
+    '-hide_banner', '-loglevel', 'warning',
+    '-i', src,
+    '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', String(crf),
+    '-g', String(gopSize),
+    '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart',
+    '-y', dst,
+  ], { timeout: 600_000 }); // 10 min timeout
 }
 
 // ── VBO content builder ──────────────────────────────────────────────
