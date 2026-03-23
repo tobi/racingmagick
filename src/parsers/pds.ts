@@ -133,7 +133,7 @@ interface ChannelDef {
 
 const MARKER = 0x7c72;
 
-function findChannelDefs(view: DataView, layout: Layout): ChannelDef[] {
+function findChannelDefs(view: DataView, layout: Layout, isExport: boolean = false): ChannelDef[] {
   const { defsOffset, defsCount, chunkOffset } = layout;
   const defsSpan = chunkOffset - defsOffset;
 
@@ -145,7 +145,7 @@ function findChannelDefs(view: DataView, layout: Layout): ChannelDef[] {
   if (defsCount > 0 && defsSpan > 0) {
     const recordSize = Math.floor(defsSpan / defsCount);
     if (recordSize >= 100 && recordSize <= 1024) {
-      const defs = parseMarkerlessDefs(view, defsOffset, recordSize, defsCount, chunkOffset);
+      const defs = parseMarkerlessDefs(view, defsOffset, recordSize, defsCount, chunkOffset, isExport);
       if (defs.length > 0) return defs;
     }
   }
@@ -201,6 +201,7 @@ function parseMarkerlessDefs(
   recordSize: number,
   count: number,
   _chunkOffset: number,
+  inferUnits: boolean = false,
 ): ChannelDef[] {
   const defs: ChannelDef[] = [];
   for (let i = 0; i < count; i++) {
@@ -212,20 +213,27 @@ function parseMarkerlessDefs(
     const name = readUtf16le(view, pos + 8, 112);
     if (name.length === 0) continue;
 
-    // Unit: try to find at standard positions, or leave empty
+    // Unit: try to find at standard positions
     let unit = '';
     if (recordSize >= 0x98 + 32) {
       unit = readUtf16le(view, pos + 0x98, 32);
     }
+    // Export files often have no unit metadata. Infer from channel name.
+    if (!unit && inferUnits) {
+      const nl = name.toLowerCase();
+      if (/speed|vel/i.test(nl)) unit = 'm/s';
+      else if (/steer/i.test(nl)) unit = 'deg';
+      else if (/accel/i.test(nl)) unit = 'g';
+      else if (/damper/i.test(nl)) unit = 'mm';
+      else if (/tps|throttle|pps|fbw.*tps/i.test(nl)) unit = 'ratio';
+      else if (/brake.*press|p_f_brake|p_r_brake/i.test(nl)) unit = 'bar';
+    }
 
-    // Type code: In export variant, the D0 field often has type pair info (7,7)
-    // which doesn't directly map to data encoding. Default to float32 for export.
-    // The actual data in export files is always float32 (verified from data gap analysis).
-    let typeCode = 6; // float32 default for export variant
+    // Export files store data as float64 (type 7). The chunk records have the
+    // sequence number as channelId, so use the actual seq number as the def ID.
+    let typeCode = 7; // float64 for export variant
 
-    // For export variant, use sequential index as ID (not file-embedded seq num)
-    // so it matches the round-robin chunk assignment
-    defs.push({ id: i, name, unit, typeCode });
+    defs.push({ id: channelId, name, unit, typeCode });
   }
 
   return defs;
@@ -245,6 +253,7 @@ function parseChunks(
   view: DataView,
   layout: Layout,
   fileSize: number,
+  allowChannelZero: boolean = false,
 ): ChunkRecord[] {
   const { chunkOffset, nextOffset, chunkCount } = layout;
   const span = nextOffset - chunkOffset;
@@ -269,8 +278,26 @@ function parseChunks(
     }
 
     if (found) {
-      for (let i = 0; i < chunkCount; i++) {
-        const pos = alignedOffset + i * chunkRecordSize;
+      // For export files (allowChannelZero), walk backwards to include
+      // cid=0 chunks that the cid>0 scanner skipped
+      let startOffset = alignedOffset;
+      if (allowChannelZero) {
+        while (startOffset - chunkRecordSize >= chunkOffset) {
+          const probe = startOffset - chunkRecordSize;
+          const cid = view.getUint32(probe + 4, true);
+          const cid2 = view.getUint32(probe + 8, true);
+          const sc = view.getUint32(probe + 0x1C, true);
+          if (cid === cid2 && sc > 0) {
+            startOffset = probe;
+          } else {
+            break;
+          }
+        }
+      }
+
+      const maxChunks = Math.floor((nextOffset - startOffset) / chunkRecordSize);
+      for (let i = 0; i < Math.min(chunkCount, maxChunks); i++) {
+        const pos = startOffset + i * chunkRecordSize;
         if (pos + 0x3C > fileSize) break;
         const order = view.getUint32(pos, true);
         const channelId = view.getUint32(pos + 4, true);
@@ -279,7 +306,7 @@ function parseChunks(
         const sampleCount = view.getUint32(pos + 0x1C, true);
         const dataPtr = view.getUint32(pos + 0x38, true);
 
-        if (channelId > 0 && channelId === channelId2 && sampleCount > 0 && samplePeriodTicks > 0 && dataPtr < fileSize) {
+        if (channelId === channelId2 && sampleCount > 0 && samplePeriodTicks > 0 && dataPtr < fileSize) {
           chunks.push({ order, channelId, samplePeriodTicks, sampleCount, dataPtr });
         }
       }
@@ -583,91 +610,23 @@ export function parsePds(data: Uint8Array, fileURL: string): Session {
   // 2. Find layout
   const layout = findLayout(entries, fileSize);
 
-  // 3. Find channel definitions
-  const channelDefs = findChannelDefs(view, layout);
-
-  // Detect export variant: markerless defs with small count + no 0x7c72 markers
+  // Detect export variant: markerless defs (no 0x7c72 markers) with small count
   const hasMarkers = tryMarkerDefs(view, layout.defsOffset, layout.chunkOffset).length > 0;
-  const isSmallDefCount = layout.defsCount > 0 && layout.defsCount <= 200;
-  const isExportVariant = !hasMarkers && isSmallDefCount;
+  const isExport = !hasMarkers && layout.defsCount > 0 && layout.defsCount <= 200;
+
+  // 3. Find channel definitions
+  const channelDefs = findChannelDefs(view, layout, isExport);
 
   // 4. Build raw channels
   const rawChannels: RawChannel[] = [];
   const builtChannels: BuiltChannel[] = [];
 
-  if (isExportVariant) {
-    // Export variant: data is float64, chunks are grouped by short-chunk boundaries,
-    // channel defs sorted by sequence number map to groups in order.
-    const chunks = parseChunks(view, layout, fileSize);
-
-    // Group chunks by short-chunk boundaries (count < 100 = group start)
-    const groups: ChunkRecord[][] = [];
-    let currentGroup: ChunkRecord[] = [];
-    for (const chunk of chunks) {
-      if (chunk.sampleCount < 100 && currentGroup.length > 0) {
-        groups.push(currentGroup);
-        currentGroup = [chunk];
-      } else {
-        currentGroup.push(chunk);
-      }
-    }
-    if (currentGroup.length > 0) groups.push(currentGroup);
-
-    // Sort channel defs by sequence number (= id field from parseMarkerlessDefs)
-    // The defs were stored with id = array index, but we need the original seq number.
-    // Re-read the seq numbers from the file.
-    const defsWithSeq: { seq: number; name: string; defIdx: number }[] = [];
-    const defsSpan = layout.chunkOffset - layout.defsOffset;
-    const defRecSize = layout.defsCount > 0 ? Math.floor(defsSpan / layout.defsCount) : 304;
-    for (let i = 0; i < layout.defsCount; i++) {
-      const pos = layout.defsOffset + i * defRecSize;
-      if (pos + 16 > fileSize) break;
-      const seq = view.getUint32(pos, true);
-      const name = readUtf16le(view, pos + 8, 112);
-      if (name.length > 0) defsWithSeq.push({ seq, name, defIdx: i });
-    }
-    defsWithSeq.sort((a, b) => a.seq - b.seq);
-
-    // Compute sample period from first valid chunk
-    let samplePeriodTicks = 200000; // default 50Hz
-    for (const chunk of chunks) {
-      if (chunk.samplePeriodTicks > 0) { samplePeriodTicks = chunk.samplePeriodTicks; break; }
-    }
-    const frequency = Math.round(TICKS_PER_SECOND / samplePeriodTicks);
-
-    // Read each group as float64 and assign to the seq-sorted channel def
-    for (let g = 0; g < Math.min(groups.length, defsWithSeq.length); g++) {
-      const def = defsWithSeq[g]!;
-      const group = groups[g]!;
-      const parts: Float64Array[] = [];
-      let totalSamples = 0;
-
-      for (const chunk of group) {
-        const n = chunk.sampleCount;
-        const maxN = Math.min(n, Math.floor((fileSize - chunk.dataPtr) / 8));
-        if (maxN <= 0) continue;
-        const decoded = new Float64Array(maxN);
-        for (let i = 0; i < maxN; i++) {
-          decoded[i] = view.getFloat64(chunk.dataPtr + i * 8, true);
-        }
-        parts.push(decoded);
-        totalSamples += decoded.length;
-      }
-
-      if (totalSamples === 0) continue;
-      const samples = new Float64Array(totalSamples);
-      let offset = 0;
-      for (const part of parts) { samples.set(part, offset); offset += part.length; }
-
-      builtChannels.push({ name: def.name, unit: '', frequency, samples });
-      rawChannels.push({ name: def.name, unit: '', frequency, samples });
-    }
-  } else {
-    // Standard variant: chunks have channel_id, float32 data
+  {
     const defMap = new Map<number, ChannelDef>();
     for (const def of channelDefs) defMap.set(def.id, def);
 
-    const chunks = parseChunks(view, layout, fileSize);
+    // Export files have channelId=0 for the first channel — allow it
+    const chunks = parseChunks(view, layout, fileSize, isExport);
     // Standard variant: chunks have channel_id, group and concatenate
     const chunksByChannel = new Map<number, ChunkRecord[]>();
     for (const chunk of chunks) {
@@ -698,6 +657,14 @@ export function parsePds(data: Uint8Array, fileURL: string): Session {
       for (const part of parts) {
         samples.set(part, offset);
         offset += part.length;
+      }
+
+      // Patch NaN values by forward-filling from last valid value.
+      // Export float64 data has NaN at chunk boundaries (padding bytes).
+      let lastValid = 0;
+      for (let i = 0; i < samples.length; i++) {
+        if (isNaN(samples[i]!)) samples[i] = lastValid;
+        else lastValid = samples[i]!;
       }
 
       const firstChunk = channelChunks[0]!;
