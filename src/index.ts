@@ -18,6 +18,7 @@ export type { VideoAttachment, VideoSync, VideoFile, VideoSyncMethod } from './v
 export { scoreFilenameMatch, discoverVideoFiles, fixVideoCommands } from './video';
 export { extractVideoTelemetry, detectVideoLapCrossings, alignLapCrossings } from './video-extract';
 export type { VideoTelemetry, VideoGpsSample, VideoMetadata } from './video-extract';
+export { saveVbo, saveVboAndVideo } from './writers/vbo';
 
 /**
  * Parse any supported telemetry file.

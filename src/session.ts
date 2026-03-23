@@ -284,6 +284,20 @@ export class Session {
     return stints;
   }
 
+  // ── Export ──────────────────────────────────────────────────────────
+
+  /** Export this session as a .vbo file. */
+  saveVbo(directory: string, filename: string): string {
+    const { saveVbo } = require('./writers/vbo');
+    return saveVbo(this, directory, filename);
+  }
+
+  /** Export this session as a .vbo file with associated video files. */
+  saveVboAndVideo(directory: string, filename: string): { vboPath: string; videoPaths: string[] } {
+    const { saveVboAndVideo } = require('./writers/vbo');
+    return saveVboAndVideo(this, directory, filename);
+  }
+
   private _buildStint(
     stintNumber: number,
     data: { outLap: LapInfo | null; laps: Lap[]; inLap: LapInfo | null },
