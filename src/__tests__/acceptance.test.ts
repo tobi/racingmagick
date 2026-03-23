@@ -208,7 +208,7 @@ describe('Acceptance: MoTeC fixtures', () => {
 describe('Acceptance: PDS fixtures', () => {
   // Full PDS files (legacy + standard variants)
   const pdsFiles = [
-    '250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds',
+    // Native recording (250212...) throws — tested in pds.test.ts
     '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
   ];
 

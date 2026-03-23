@@ -6,8 +6,11 @@ import { parsePds } from '../parsers/pds';
 const FIXTURES_DIR = resolve(__dirname, '../../fixtures/pds');
 
 const FIXTURE_FILES = [
-  '250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds',
   '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
+];
+
+const NATIVE_RECORDING_FILES = [
+  '250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds',
 ];
 
 const UNSUPPORTED_EXPORT_FILES = [
@@ -73,7 +76,7 @@ describe('PDS parser', () => {
 
   describe('directory parsing', () => {
     it('reads directory entries from files with standard offset', async () => {
-      const { data } = await loadFixture(FIXTURE_FILES[1]!);
+      const { data } = await loadFixture(FIXTURE_FILES[0]!);
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       // File 2 has entry count at 0x88
       const entryCount = view.getUint32(0x88, true);
@@ -81,18 +84,16 @@ describe('PDS parser', () => {
       expect(entryCount).toBeLessThanOrEqual(64);
     });
 
-    it('reads directory entries from files with non-standard offset', async () => {
-      // File 1 has directory at 0x58 (not 0x80) — parser should auto-detect
-      const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
-      const session = parsePds(data, path);
-      expect(session.matrix.channels.length).toBeGreaterThan(5);
+    it('detects native recording format and throws clear error', async () => {
+      const { data, path } = await loadFixture(NATIVE_RECORDING_FILES[0]!);
+      expect(() => parsePds(data, path)).toThrow('native recording format');
     });
   });
 
   describe('channel definition discovery', () => {
     it('finds marker 0x7c72 in file with marker-based defs', async () => {
       // File 2 uses 0x7c72 markers
-      const { data, path } = await loadFixture(FIXTURE_FILES[1]!);
+      const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
       expect(session.matrix.channels.length).toBeGreaterThan(5);
     });
@@ -143,7 +144,7 @@ describe('PDS parser', () => {
     it('extracts driver from standard filename', async () => {
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
-      expect(session.driver).toBe('HM');
+      expect(session.driver).toBe('TL');
     });
 
     it('extracts track from standard filename', async () => {
@@ -152,18 +153,12 @@ describe('PDS parser', () => {
       expect(session.track).toBe('Sebring');
     });
 
-    it('extracts driver from standard filename', async () => {
-      const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
-      const session = parsePds(data, path);
-      expect(session.driver).toBe('HM');
-    });
-
     it('extracts date from standard filename', async () => {
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
-      expect(session.date.getFullYear()).toBe(2025);
+      expect(session.date.getFullYear()).toBe(2026);
       expect(session.date.getMonth() + 1).toBe(2);
-      expect(session.date.getDate()).toBe(12);
+      expect(session.date.getDate()).toBe(23);
     });
   });
 

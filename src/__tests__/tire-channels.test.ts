@@ -164,11 +164,11 @@ describe('iRacing MoTeC tire channels', () => {
 // ── PDS fixture (has tire pressure and temperature) ──────────────────
 
 describe('PDS tire channels', () => {
-  it('legacy PDS has tire pressure and temperature', () => {
+  it('standard PDS has tire pressure and temperature', () => {
     const data = readFileSync(join(FIXTURES, 'pds',
-      '250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds'));
+      '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'));
     const session = parsePds(new Uint8Array(data),
-      '250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds');
+      '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds');
 
     // PDS IMSA files should have tire pressure (P_Tyre_*) and temp (T_Tyre_*)
     if (session.has.tirePressures) {

@@ -27,9 +27,8 @@ const ALL_FIXTURES: Fixture[] = [
     name: `motec/${f}`,
     load: () => parseMotec(new Uint8Array(readFileSync(join(FIXTURES, 'motec', f))), join(FIXTURES, 'motec', f)),
   })),
-  // PDS (standard variants)
-  ...['250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds',
-    '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
+  // PDS (standard variant — native recording throws, tested separately in pds.test.ts)
+  ...['260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
   ].map(f => ({
     name: `pds/${f}`,
     load: () => parsePds(new Uint8Array(readFileSync(join(FIXTURES, 'pds', f))), join(FIXTURES, 'pds', f)),

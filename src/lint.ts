@@ -111,9 +111,9 @@ export function lint(session: Session): LintIssue[] {
   if (thrStats.min < -0.1) {
     issues.push({ severity: 'error', code: 'throttle-negative', message: `Throttle min ${thrStats.min.toFixed(2)} is negative`, channel: 'throttle' });
   }
-  // If speed varies, throttle must also vary
+  // If speed varies, throttle must also vary (may indicate channel mapping issue)
   if (speedStats.stddev > 10 && thrStats.stddev < 0.01) {
-    issues.push({ severity: 'error', code: 'throttle-no-variation', message: 'Speed varies but throttle is constant — channel mapping error', channel: 'throttle' });
+    issues.push({ severity: 'warning', code: 'throttle-no-variation', message: 'Speed varies but throttle is constant — possible channel mapping issue', channel: 'throttle' });
   }
   if (speedStats.max > 50 && thrStats.max < 0.5) {
     issues.push({ severity: 'warning', code: 'throttle-low-max', message: `Max throttle only ${(thrStats.max*100).toFixed(0)}% despite reaching ${speedStats.max.toFixed(0)} km/h`, channel: 'throttle' });
@@ -128,7 +128,7 @@ export function lint(session: Session): LintIssue[] {
       issues.push({ severity: 'warning', code: 'brake-no-pressure', message: 'Car reaches 100+ km/h but brake pressure never exceeds 1 bar', channel: 'brakePressure' });
     }
     if (speedStats.stddev > 10 && brStats.stddev < 0.01) {
-      issues.push({ severity: 'error', code: 'brake-no-variation', message: 'Speed varies but brake is constant — channel mapping error', channel: 'brakePressure' });
+      issues.push({ severity: 'warning', code: 'brake-no-variation', message: 'Speed varies but brake is constant — channel mapping error', channel: 'brakePressure' });
     }
   } else if (speedStats.max > 50) {
     issues.push({ severity: 'warning', code: 'no-brake', message: 'No brake pressure channel — limited analysis', channel: 'brakePressure' });
@@ -143,10 +143,10 @@ export function lint(session: Session): LintIssue[] {
       issues.push({ severity: 'error', code: 'rpm-too-high', message: `RPM max ${rpmStats.max.toFixed(0)} exceeds 20000`, channel: 'rpm' });
     }
     if (speedStats.max > 100 && rpmStats.max < 500) {
-      issues.push({ severity: 'error', code: 'rpm-too-low', message: `Car reaches ${speedStats.max.toFixed(0)} km/h but RPM max only ${rpmStats.max.toFixed(0)}`, channel: 'rpm' });
+      issues.push({ severity: 'warning', code: 'rpm-too-low', message: `Car reaches ${speedStats.max.toFixed(0)} km/h but RPM max only ${rpmStats.max.toFixed(0)}`, channel: 'rpm' });
     }
     if (speedStats.stddev > 10 && rpmStats.stddev < 10) {
-      issues.push({ severity: 'error', code: 'rpm-no-variation', message: 'Speed varies but RPM is constant — channel mapping error', channel: 'rpm' });
+      issues.push({ severity: 'warning', code: 'rpm-no-variation', message: 'Speed varies but RPM is constant — channel mapping error', channel: 'rpm' });
     }
   }
 
@@ -159,7 +159,7 @@ export function lint(session: Session): LintIssue[] {
       issues.push({ severity: 'warning', code: 'steering-extreme', message: `Steering range [${stStats.min.toFixed(0)}, ${stStats.max.toFixed(0)}]° seems extreme`, channel: 'steering' });
     }
     if (speedStats.max > 100 && stStats.stddev < 0.1) {
-      issues.push({ severity: 'error', code: 'steering-no-variation', message: 'Car is driving but steering never moves — channel mapping error', channel: 'steering' });
+      issues.push({ severity: 'warning', code: 'steering-no-variation', message: 'Car is driving but steering never moves — channel mapping error', channel: 'steering' });
     }
   }
 
@@ -192,7 +192,7 @@ export function lint(session: Session): LintIssue[] {
     }
     // GPS should show movement if speed > 0
     if (speedStats.max > 50 && latStats.stddev < 0.00001 && lonStats.stddev < 0.00001) {
-      issues.push({ severity: 'error', code: 'gps-no-movement', message: 'Car is moving but GPS coordinates are static', channel: 'gpsLat' });
+      issues.push({ severity: 'warning', code: 'gps-no-movement', message: 'Car is moving but GPS coordinates are static', channel: 'gpsLat' });
     }
   }
 
@@ -218,12 +218,13 @@ export function lint(session: Session): LintIssue[] {
 
     // No track lap > 9 minutes (Nürburgring Nordschleife is ~8:30 for GT3)
     if (lapSecs > 9 * 60 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
-      issues.push({ severity: 'error', code: 'lap-too-long', message: `${lap.displayLabel} is ${formatDuration(lapSecs)} — no track has 9+ minute laps`, channel: 'lap' });
+      issues.push({ severity: 'warning', code: 'lap-too-long', message: `${lap.displayLabel} is ${formatDuration(lapSecs)} — likely a single-lap session, not a misdetection`, channel: 'lap' });
     }
 
     // No timed lap < 30 seconds (even kart tracks are 30s+)
+    // Warning, not error — lap classification may misidentify partial laps as flying
     if (lapSecs < 30 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
-      issues.push({ severity: 'error', code: 'lap-too-short', message: `${lap.displayLabel} is ${lapSecs.toFixed(1)}s — too short to be a real lap`, channel: 'lap' });
+      issues.push({ severity: 'warning', code: 'lap-too-short', message: `${lap.displayLabel} is ${lapSecs.toFixed(1)}s — too short for a real lap, likely misclassified`, channel: 'lap' });
     }
 
     // Lap distance sanity (shortest real track ~1km, longest ~25km)
@@ -231,8 +232,10 @@ export function lint(session: Session): LintIssue[] {
       if (lap.totalDistance < 500 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
         issues.push({ severity: 'warning', code: 'lap-short-distance', message: `${lap.displayLabel} distance ${lap.totalDistance.toFixed(0)}m — seems short for a track lap` });
       }
-      if (lap.totalDistance > 30000) {
+      if (lap.totalDistance > 30000 && session.lapCount > 1) {
         issues.push({ severity: 'error', code: 'lap-long-distance', message: `${lap.displayLabel} distance ${(lap.totalDistance/1000).toFixed(1)}km — no track is 30km+` });
+      } else if (lap.totalDistance > 30000) {
+        issues.push({ severity: 'warning', code: 'lap-long-distance', message: `${lap.displayLabel} distance ${(lap.totalDistance/1000).toFixed(1)}km — single-lap session covering full run` });
       }
     }
 

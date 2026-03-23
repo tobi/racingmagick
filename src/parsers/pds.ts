@@ -601,6 +601,23 @@ export function parsePds(data: Uint8Array, fileURL: string): Session {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const warnings: SessionWarning[] = [];
 
+  // Detect Pi Toolbox native recording format (large files with non-standard directory).
+  // These have entryCount=1 at 0x88 and metadata sections near file end.
+  // The channel data uses 40-byte compact chunks with a different field layout.
+  const rawEntryCount = view.getUint32(0x88, true);
+  if (rawEntryCount <= 2 && fileSize > 10_000_000) {
+    // Verify: check if 0x40 points near end of file (metadata area)
+    const altOffset = view.getUint32(0x40, true);
+    if (altOffset > fileSize * 0.5 && altOffset < fileSize) {
+      throw new ParseError(
+        `PDS native recording format (Pi Toolbox, ${(fileSize/1024/1024).toFixed(0)}MB) — ` +
+        `uses 40-byte compact chunks not yet supported. ` +
+        `Re-export from Pi Toolbox as a standard .pds export, or use the .ld MoTeC companion file.`,
+        'pds',
+      );
+    }
+  }
+
   // 1. Parse directory
   const entries = findDirectory(view, fileSize);
   if (entries.length < 3) {
