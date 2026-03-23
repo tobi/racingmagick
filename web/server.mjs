@@ -57,6 +57,8 @@ async function parseAllFixtures(lib) {
   return sessions;
 }
 
+let scoreFilenameMatch; // set after lib loads
+
 function extractSessionInfo(session, fullPath, formatDir) {
   const matrix = session.matrix;
   const channels = [...matrix.nameToIndex.keys()].filter(n => n.length > 0);
@@ -110,30 +112,36 @@ function extractSessionInfo(session, fullPath, formatDir) {
     }));
   }
 
-  // Also check for video files adjacent to the telemetry file
-  // Prefer _keyframed.mp4 versions (browser-seekable)
+  // Find video files adjacent to the telemetry file using fuzzy token matching.
+  // Tokenizes filenames and scores by shared tokens (driver initials, track code,
+  // session type, run number). Prefers _keyframed.mp4 when available.
   const dir = join(FIXTURES, formatDir);
   const stem = fullPath.split('/').pop().replace(/\.[^.]+$/, '');
-  const allVideos = readdirSync(dir)
-    .filter(f => /\.(mp4|mov|mkv|avi)$/i.test(f))
-    .filter(f => f.startsWith(stem));
+  const allVideoFiles = readdirSync(dir)
+    .filter(f => /\.(mp4|mov|mkv|avi|MOV)$/i.test(f))
+    .filter(f => !f.includes('_keyframed')); // score originals, swap to keyframed later
 
-  // If a _keyframed.mp4 exists, use it instead of the original
+  // Score each video: exact stem prefix match (score 50) OR fuzzy token match
+  const scored = allVideoFiles.map(f => {
+    const vStem = f.replace(/\.[^.]+$/, '');
+    // Exact prefix: video filename starts with telemetry stem (VBO convention)
+    const prefixScore = vStem.startsWith(stem) ? 50 : 0;
+    const fuzzyScore = scoreFilenameMatch(stem, vStem);
+    return { file: f, score: Math.max(prefixScore, fuzzyScore) };
+  }).filter(s => s.score >= 3).sort((a, b) => b.score - a.score);
+
   const adjacentVideos = [];
-  const seen = new Set();
-  for (const f of allVideos) {
-    const base = f.replace(/_keyframed\.mp4$/i, '.mp4');
-    if (seen.has(base)) continue;
-    seen.add(base);
-    // Check if keyframed version exists
-    const kfName = f.replace(/\.(mp4|mov|mkv|avi)$/i, '_keyframed.mp4');
-    const useKf = !f.includes('_keyframed') && allVideos.includes(kfName);
-    const actualFile = useKf ? kfName : f;
+  for (const s of scored) {
+    // Check if a keyframed version exists
+    const kfName = s.file.replace(/\.(mp4|mov|mkv|avi|MOV)$/i, '_keyframed.mp4');
+    const hasKf = existsSync(join(dir, kfName));
+    const actualFile = hasKf ? kfName : s.file;
     adjacentVideos.push({
       path: join(dir, actualFile),
       filename: actualFile,
-      url: `/video/${formatDir}/${actualFile}`,
-      needsKeyframes: !actualFile.includes('_keyframed'),
+      url: `/video/${formatDir}/${encodeURIComponent(actualFile)}`,
+      needsKeyframes: !hasKf,
+      matchScore: s.score,
     });
   }
 
@@ -215,6 +223,8 @@ async function main() {
   console.log('RacingMagick Inspector');
   console.log('Loading parser...');
   const lib = await loadParser();
+
+  scoreFilenameMatch = lib.scoreFilenameMatch;
 
   console.log('Parsing fixtures...');
   const sessions = await parseAllFixtures(lib);

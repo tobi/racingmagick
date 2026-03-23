@@ -12,5 +12,7 @@ fixtures/pds/*.pds
 fixtures/vbo/*.vbo
 
 # Video files (symlinks to NAS + re-encoded)
-fixtures/vbo/*.mp4
+fixtures/**/*.mp4
+fixtures/**/*.MOV
+fixtures/**/*.mov
 *_keyframed.mp4
