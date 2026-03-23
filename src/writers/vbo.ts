@@ -78,10 +78,10 @@ function buildVboContent(session: Session): string {
   // Plus any ECU channels we have
   const vboColumns = buildColumnMap(session);
 
-  // [header] section — channel names
+  // [header] section — channel names (no spaces)
   lines.push('[header]');
   for (const col of vboColumns) {
-    lines.push(col.vboName);
+    lines.push(col.vboName.replace(/\s+/g, '_'));
   }
   lines.push('');
 
@@ -100,9 +100,9 @@ function buildVboContent(session: Session): string {
   if (session.track) lines.push(`Track: ${session.track}`);
   lines.push('');
 
-  // [column names] section
+  // [column names] section — names MUST NOT contain spaces (VBO is space-delimited)
   lines.push('[column names]');
-  lines.push(vboColumns.map(c => c.vboName).join(' '));
+  lines.push(vboColumns.map(c => c.vboName.replace(/\s+/g, '_')).join(' '));
   lines.push('');
 
   // [laptiming] section
@@ -194,7 +194,7 @@ function buildColumnMap(session: Session): VboColumn[] {
 
   // velocity (km/h)
   cols.push({
-    vboName: 'velocity kmh',
+    vboName: 'velocity_kmh',
     unit: 'km/h',
     format: (i) => {
       const v = matrix.channels[3][i]!; // speed
@@ -224,7 +224,7 @@ function buildColumnMap(session: Session): VboColumn[] {
 
   // vertical velocity
   cols.push({
-    vboName: 'vertical velocity m/s',
+    vboName: 'vertical_velocity_m/s',
     unit: 'm/s',
     format: () => '+0000.00',
   });
@@ -238,7 +238,7 @@ function buildColumnMap(session: Session): VboColumn[] {
 
   // solution type
   cols.push({
-    vboName: 'solution type',
+    vboName: 'solution_type',
     unit: '',
     format: (i) => {
       const row = matrix.row('gpsFix');
