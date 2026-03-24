@@ -304,28 +304,29 @@ function buildColumnMap(session: Session): VboColumn[] {
     return row ? pad2(Math.round(row[i]!)) : '00';
   }});
 
-  // ECU channels — headerName has spaces (for [header]), columnName has underscores (for [column names])
-  const ecuChannels: Array<{ canonical: string; headerName: string; columnName: string; unit: string }> = [
-    { canonical: 'speed', headerName: 'Vehicle_Speed', columnName: 'Vehicle_Speed', unit: 'kmh' },
-    { canonical: 'rpm', headerName: 'Engine_Speed', columnName: 'Engine_Speed', unit: 'RPM' },
-    { canonical: 'throttle', headerName: 'Throttle_Pedal', columnName: 'Throttle_Pedal', unit: '%' },
-    { canonical: 'brakePressure', headerName: 'Brake_Pressure_Front', columnName: 'Brake_Pressure_Front', unit: 'bar' },
-    { canonical: 'steering', headerName: 'Steering_Angle', columnName: 'Steering_Angle', unit: '' },
-    { canonical: 'gear', headerName: 'Gear', columnName: 'Gear', unit: '' },
-    { canonical: 'gLong', headerName: 'ComboAcc', columnName: 'ComboAcc', unit: 'G' },
-    { canonical: 'gLat', headerName: 'Combo_G', columnName: 'Combo_G', unit: 'G' },
-    { canonical: 'wheelSpeedFL', headerName: 'whlspeed_FL', columnName: 'whlspeed_FL', unit: 'kmh' },
-    { canonical: 'wheelSpeedFR', headerName: 'whlspeed_FR', columnName: 'whlspeed_FR', unit: 'kmh' },
-    { canonical: 'wheelSpeedRL', headerName: 'whlspeed_RL', columnName: 'whlspeed_RL', unit: 'kmh' },
-    { canonical: 'wheelSpeedRR', headerName: 'whlspeed_RR', columnName: 'whlspeed_RR', unit: 'kmh' },
-    { canonical: 'tirePressureFL', headerName: 'Tire_Pressure_FL', columnName: 'Tire_Pressure_FL', unit: 'bar' },
-    { canonical: 'tirePressureFR', headerName: 'Tire_Pressure_FR', columnName: 'Tire_Pressure_FR', unit: 'bar' },
-    { canonical: 'tirePressureRL', headerName: 'Tire_Pressure_RL', columnName: 'Tire_Pressure_RL', unit: 'bar' },
-    { canonical: 'tirePressureRR', headerName: 'Tire_Pressure_RR', columnName: 'Tire_Pressure_RR', unit: 'bar' },
-    { canonical: 'tireTempFL', headerName: 'Tire_Temp_FL', columnName: 'Tire_Temp_FL', unit: 'C' },
-    { canonical: 'tireTempFR', headerName: 'Tire_Temp_FR', columnName: 'Tire_Temp_FR', unit: 'C' },
-    { canonical: 'tireTempRL', headerName: 'Tire_Temp_RL', columnName: 'Tire_Temp_RL', unit: 'C' },
-    { canonical: 'tireTempRR', headerName: 'Tire_Temp_RR', columnName: 'Tire_Temp_RR', unit: 'C' },
+  // ECU channels with physical value ranges for clamping.
+  // Every value gets clamped to its valid range — no garbage reaches the output.
+  const ecuChannels: Array<{ canonical: string; headerName: string; columnName: string; unit: string; min: number; max: number }> = [
+    { canonical: 'speed', headerName: 'Vehicle_Speed', columnName: 'Vehicle_Speed', unit: 'kmh', min: 0, max: 400 },
+    { canonical: 'rpm', headerName: 'Engine_Speed', columnName: 'Engine_Speed', unit: 'RPM', min: 0, max: 20000 },
+    { canonical: 'throttle', headerName: 'Throttle_Pedal', columnName: 'Throttle_Pedal', unit: '%', min: 0, max: 100 },  // after *100
+    { canonical: 'brakePressure', headerName: 'Brake_Pressure_Front', columnName: 'Brake_Pressure_Front', unit: 'bar', min: 0, max: 200 },
+    { canonical: 'steering', headerName: 'Steering_Angle', columnName: 'Steering_Angle', unit: '(null)', min: -900, max: 900 },
+    { canonical: 'gear', headerName: 'Gear', columnName: 'Gear', unit: '(null)', min: -1, max: 9 },
+    { canonical: 'gLong', headerName: 'ComboAcc', columnName: 'ComboAcc', unit: 'G', min: -8, max: 8 },
+    { canonical: 'gLat', headerName: 'Combo_G', columnName: 'Combo_G', unit: 'G', min: -8, max: 8 },
+    { canonical: 'wheelSpeedFL', headerName: 'whlspeed_FL', columnName: 'whlspeed_FL', unit: 'kmh', min: 0, max: 400 },
+    { canonical: 'wheelSpeedFR', headerName: 'whlspeed_FR', columnName: 'whlspeed_FR', unit: 'kmh', min: 0, max: 400 },
+    { canonical: 'wheelSpeedRL', headerName: 'whlspeed_RL', columnName: 'whlspeed_RL', unit: 'kmh', min: 0, max: 400 },
+    { canonical: 'wheelSpeedRR', headerName: 'whlspeed_RR', columnName: 'whlspeed_RR', unit: 'kmh', min: 0, max: 400 },
+    { canonical: 'tirePressureFL', headerName: 'Tire_Pressure_FL', columnName: 'Tire_Pressure_FL', unit: 'bar', min: 0, max: 5 },
+    { canonical: 'tirePressureFR', headerName: 'Tire_Pressure_FR', columnName: 'Tire_Pressure_FR', unit: 'bar', min: 0, max: 5 },
+    { canonical: 'tirePressureRL', headerName: 'Tire_Pressure_RL', columnName: 'Tire_Pressure_RL', unit: 'bar', min: 0, max: 5 },
+    { canonical: 'tirePressureRR', headerName: 'Tire_Pressure_RR', columnName: 'Tire_Pressure_RR', unit: 'bar', min: 0, max: 5 },
+    { canonical: 'tireTempFL', headerName: 'Tire_Temp_FL', columnName: 'Tire_Temp_FL', unit: 'C', min: 0, max: 200 },
+    { canonical: 'tireTempFR', headerName: 'Tire_Temp_FR', columnName: 'Tire_Temp_FR', unit: 'C', min: 0, max: 200 },
+    { canonical: 'tireTempRL', headerName: 'Tire_Temp_RL', columnName: 'Tire_Temp_RL', unit: 'C', min: 0, max: 200 },
+    { canonical: 'tireTempRR', headerName: 'Tire_Temp_RR', columnName: 'Tire_Temp_RR', unit: 'C', min: 0, max: 200 },
   ];
 
   // Synthesized Lap_Number — increment at each lap boundary so the VBO
@@ -351,30 +352,25 @@ function buildColumnMap(session: Session): VboColumn[] {
     const row = matrix.row(ecu.canonical);
     if (!row) continue;
 
-    // Sanity check: skip channels with garbage data
-    let min = Infinity, max = -Infinity, nonZero = 0, valid = 0;
+    // Skip channels that are all zeros (not recorded)
+    let nonZero = 0;
     const checkLen = Math.min(row.length, 10000);
     for (let j = 0; j < checkLen; j++) {
-      const v = row[j]!;
-      if (!isFinite(v)) continue;
-      valid++;
-      if (v !== 0) nonZero++;
-      if (v < min) min = v;
-      if (v > max) max = v;
+      if (isFinite(row[j]!) && row[j] !== 0) nonZero++;
     }
-    if (valid === 0 || nonZero === 0) continue;
-    // Reject channels with values that no real sensor produces
-    if (min < -200 || max > 50000) continue;
+    if (nonZero === 0) continue;
 
+    // Capture ecu in closure
+    const ch = ecu;
     cols.push({
-      headerName: ecu.headerName, columnName: ecu.columnName,
-      unit: ecu.unit,
+      headerName: ch.headerName, columnName: ch.columnName,
+      unit: ch.unit,
       format: (i) => {
         let v = row[i]!;
         if (!isFinite(v)) v = 0;
-        if (ecu.canonical === 'throttle') v *= 100;
-        // Clamp to safe range — Circuit Tools rejects extreme values
-        v = Math.max(-9999, Math.min(99999, v));
+        if (ch.canonical === 'throttle') v *= 100;
+        // Clamp to physical range — no garbage reaches the output
+        v = Math.max(ch.min, Math.min(ch.max, v));
         return formatSci(v);
       },
     });
