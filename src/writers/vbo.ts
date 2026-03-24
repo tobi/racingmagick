@@ -148,10 +148,10 @@ function buildVboContent(session: Session): string {
   }
   lines.push('');
 
-  // [channel units] section — empty string for dimensionless, not (null)
+  // [channel units] section — (null) for dimensionless, matching real VBOX format
   lines.push('[channel units]');
   for (const col of vboColumns) {
-    lines.push(col.unit || '');
+    lines.push(col.unit || '(null)');
   }
   lines.push('');
 
@@ -162,6 +162,29 @@ function buildVboContent(session: Session): string {
   if (session.vehicle) lines.push(`Vehicle: ${session.vehicle}`);
   if (session.track) lines.push(`Track: ${session.track}`);
   lines.push('');
+
+  // [circuit details] section
+  if (session.track || session.circuit) {
+    lines.push('[circuit details]');
+    if (session.circuit?.country) lines.push(`country ${session.circuit.country}`);
+    if (session.track) lines.push(`circuit ${session.track}`);
+    lines.push('');
+  }
+
+  // [session data] section
+  const timed = session.timedLaps();
+  if (timed.length > 0) {
+    const fastest = session.fastestLap();
+    lines.push('[session data]');
+    lines.push(`laps ${timed.length}`);
+    if (fastest) {
+      const secs = fastest.lapTime / 1000;
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      lines.push(`fastest ${m}m ${s.toFixed(2)}s`);
+    }
+    lines.push('');
+  }
 
   // [column names] section — short names, NO spaces (space-delimited line)
   lines.push('[column names]');
@@ -210,13 +233,13 @@ function buildColumnMap(session: Session): VboColumn[] {
   const matrix = session.matrix;
   const cols: VboColumn[] = [];
 
-  // satellites
+  // satellites — plain integer, no padding
   cols.push({
     headerName: 'satellites', columnName: 'sats',
-    unit: '',
+    unit: '(null)',
     format: (i) => {
       const row = matrix.row('gpsSatellites');
-      return row ? String(Math.round(row[i]!)) : '0';
+      return row ? String(Math.round(row[i]!)).padStart(3, '0') : '000';
     },
   });
 
@@ -248,9 +271,10 @@ function buildColumnMap(session: Session): VboColumn[] {
     return (!row || row[i] === 0) ? '+00000.00000000' : formatNmea(row[i]!);
   }});
 
-  // velocity (km/h) — standard VBOX GPS speed
+  // velocity (km/h) — fixed-width: 057.506
   cols.push({ headerName: 'velocity kmh', columnName: 'velocity', unit: 'kmh', format: (i) => {
-    return formatSci(matrix.channels[3][i]!);
+    const v = matrix.channels[3][i]!;
+    return v.toFixed(3).padStart(7, '0');
   }});
 
   // heading
