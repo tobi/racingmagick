@@ -368,11 +368,14 @@ function pad2(n: number): string {
   return String(Math.floor(n)).padStart(2, '0');
 }
 
-/** Format as VBO scientific notation: +1.234567E+02 */
+/** Format as VBO scientific notation: +1.234567E+02 (always 2-digit exponent) */
 function formatSci(v: number): string {
   if (!isFinite(v)) return '+0.000000E+00';
   const sign = v >= 0 ? '+' : '';
-  return sign + v.toExponential(6).replace('e', 'E');
+  // toExponential gives e+1 but VBOX needs E+01
+  const s = v.toExponential(6).replace('e', 'E');
+  // Ensure 2-digit exponent: E+1 → E+01, E-1 → E-01
+  return sign + s.replace(/E([+-])(\d)$/, 'E$1' + '0$2');
 }
 
 /** Format as signed fixed: +00123.45 */
