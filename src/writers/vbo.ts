@@ -126,8 +126,13 @@ function reencodeVideo(src: string, dst: string, crf: number, gopSize: number): 
 function buildVboContent(session: Session): string {
   const lines: string[] = [];
   const matrix = session.matrix;
-  const hz = matrix.sampleRate;
-  const n = matrix.sampleCount;
+  const sourceHz = matrix.sampleRate;
+
+  // Circuit Tools 3 supports max 25Hz. Downsample if needed.
+  const MAX_VBO_HZ = 25;
+  const step = sourceHz > MAX_VBO_HZ ? Math.round(sourceHz / MAX_VBO_HZ) : 1;
+  const hz = sourceHz / step;
+  const n = Math.ceil(matrix.sampleCount / step);
 
   // File created line
   const d = session.date;
@@ -211,9 +216,11 @@ function buildVboContent(session: Session): string {
   const baseTime = timeRow[0]!;
 
   for (let i = 0; i < n; i++) {
+    const si = i * step; // source index (accounts for downsampling)
+    if (si >= matrix.sampleCount) break;
     const values: string[] = [];
     for (const col of vboColumns) {
-      values.push(col.format(i, matrix, session, hz, baseTime));
+      values.push(col.format(si, matrix, session, hz, baseTime));
     }
     lines.push(values.join(' '));
   }
@@ -262,16 +269,18 @@ function buildColumnMap(session: Session): VboColumn[] {
     },
   });
 
-  // latitude — VBO uses NMEA DDMM.MMMMM
+  // latitude — VBOX minutes format (decimal degrees × 60)
   cols.push({ headerName: 'latitude', columnName: 'lat', unit: '', format: (i) => {
     const row = matrix.row('gpsLat');
-    return (!row || row[i] === 0) ? '+0000.00000000' : formatNmea(row[i]!);
+    if (!row || row[i] === 0) return '+0.00000000';
+    return formatVboxMinutes(row[i]!);
   }});
 
-  // longitude
+  // longitude — VBOX minutes format
   cols.push({ headerName: 'longitude', columnName: 'long', unit: '', format: (i) => {
     const row = matrix.row('gpsLon');
-    return (!row || row[i] === 0) ? '+00000.00000000' : formatNmea(row[i]!);
+    if (!row || row[i] === 0) return '+0.00000000';
+    return formatVboxMinutes(row[i]!);
   }});
 
   // velocity (km/h) — fixed-width: 057.506
@@ -402,13 +411,11 @@ function formatSigned(v: number, decimals: number): string {
 }
 
 /**
- * Convert decimal degrees to NMEA DDMM.MMMMM format.
- * VBO files typically use NMEA for coordinates.
+ * Convert decimal degrees to VBOX minutes format (degrees × 60).
+ * VBOX stores coordinates as total minutes with sign.
  */
-function formatNmea(decimalDeg: number): string {
+function formatVboxMinutes(decimalDeg: number): string {
   const sign = decimalDeg >= 0 ? '+' : '-';
-  const abs = Math.abs(decimalDeg);
-  const degrees = Math.floor(abs);
-  const minutes = (abs - degrees) * 60;
-  return `${sign}${String(degrees).padStart(2, '0')}${minutes.toFixed(8).padStart(11, '0')}`;
+  const totalMinutes = Math.abs(decimalDeg) * 60;
+  return `${sign}${totalMinutes.toFixed(8)}`;
 }
