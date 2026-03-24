@@ -58,9 +58,36 @@ describe('VBO writer', () => {
     expect(vboContent).toContain('[header]');
     expect(vboContent).toContain('[data]');
 
-    // Should have ECU channels
-    expect(vboContent).toContain('Engine_Speed');
-    expect(vboContent).toContain('Brake_Pressure_Front');
+    // Should have ECU channels (those with valid data)
+    expect(vboContent).toContain('Throttle_Pedal');
+    expect(vboContent).toContain('Steering_Angle');
+  });
+
+  it('exported VBO has no extreme values that break Circuit Tools', async () => {
+    // PDS files can have garbage sentinel values (-700 bar, 8M bar) that
+    // Circuit Tools rejects. The writer must filter or clamp them.
+    const data = readFileSync(join(FIXTURES, 'pds',
+      '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'));
+    const session = parsePds(new Uint8Array(data),
+      join(FIXTURES, 'pds', '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'));
+
+    const tmp = mkdtempSync(join(tmpdir(), 'racingmagick-vbo-'));
+    const vboPath = saveVbo(session, tmp, 'sanity_test');
+    const content = readFileSync(vboPath, 'utf-8');
+
+    // Parse all data lines and check every ECU value
+    const lines = content.split('\n');
+    const dataStart = lines.indexOf('[data]');
+    let extremeCount = 0;
+    for (let i = dataStart + 1; i < lines.length; i++) {
+      const fields = lines[i]!.trim().split(/\s+/);
+      if (fields.length < 11) continue;
+      for (let j = 10; j < fields.length; j++) {
+        const v = parseFloat(fields[j]!);
+        if (isFinite(v) && Math.abs(v) > 99999) extremeCount++;
+      }
+    }
+    expect(extremeCount).toBe(0);
   });
 
   it('round-trips VBO → VBO', () => {

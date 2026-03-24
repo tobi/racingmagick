@@ -294,6 +294,27 @@ export function lint(session: Session): LintIssue[] {
     }
   }
 
+  // ── Sentinel / garbage values ───────────────────────────────────
+  // Some PDS files have channels mapped to wrong data producing extreme
+  // sentinel values. Flag any channel with values outside ±50000.
+  for (const chName of ['brakePressure', 'tirePressureFL', 'tirePressureFR', 'tirePressureRL', 'tirePressureRR',
+    'tireTempFL', 'tireTempFR', 'tireTempRL', 'tireTempRR']) {
+    const row = matrix.row(chName);
+    if (!row) continue;
+    let extremes = 0;
+    for (let i = 0; i < row.length; i++) {
+      if (isFinite(row[i]!) && (row[i]! > 50000 || row[i]! < -200)) extremes++;
+    }
+    if (extremes > 0) {
+      issues.push({
+        severity: 'warning',
+        code: `${chName}-extreme-values`,
+        message: `${chName} has ${extremes} extreme values (>50000 or <-200) — possible channel mapping error`,
+        channel: chName,
+      });
+    }
+  }
+
   // ── Distance channel ─────────────────────────────────────────────
 
   const dist = matrix.channels[1]!;

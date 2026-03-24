@@ -314,10 +314,10 @@ function buildColumnMap(session: Session): VboColumn[] {
     { canonical: 'gear', headerName: 'Gear', columnName: 'Gear', unit: '' },
     { canonical: 'gLong', headerName: 'ComboAcc', columnName: 'ComboAcc', unit: 'G' },
     { canonical: 'gLat', headerName: 'Combo_G', columnName: 'Combo_G', unit: 'G' },
-    { canonical: 'wheelSpeedFL', headerName: 'whlspeed_FL', columnName: 'whlspeed_FL', unit: 'km/h' },
-    { canonical: 'wheelSpeedFR', headerName: 'whlspeed_FR', columnName: 'whlspeed_FR', unit: 'km/h' },
-    { canonical: 'wheelSpeedRL', headerName: 'whlspeed_RL', columnName: 'whlspeed_RL', unit: 'km/h' },
-    { canonical: 'wheelSpeedRR', headerName: 'whlspeed_RR', columnName: 'whlspeed_RR', unit: 'km/h' },
+    { canonical: 'wheelSpeedFL', headerName: 'whlspeed_FL', columnName: 'whlspeed_FL', unit: 'kmh' },
+    { canonical: 'wheelSpeedFR', headerName: 'whlspeed_FR', columnName: 'whlspeed_FR', unit: 'kmh' },
+    { canonical: 'wheelSpeedRL', headerName: 'whlspeed_RL', columnName: 'whlspeed_RL', unit: 'kmh' },
+    { canonical: 'wheelSpeedRR', headerName: 'whlspeed_RR', columnName: 'whlspeed_RR', unit: 'kmh' },
     { canonical: 'tirePressureFL', headerName: 'Tire_Pressure_FL', columnName: 'Tire_Pressure_FL', unit: 'bar' },
     { canonical: 'tirePressureFR', headerName: 'Tire_Pressure_FR', columnName: 'Tire_Pressure_FR', unit: 'bar' },
     { canonical: 'tirePressureRL', headerName: 'Tire_Pressure_RL', columnName: 'Tire_Pressure_RL', unit: 'bar' },
@@ -351,12 +351,30 @@ function buildColumnMap(session: Session): VboColumn[] {
     const row = matrix.row(ecu.canonical);
     if (!row) continue;
 
+    // Sanity check: skip channels with garbage data
+    let min = Infinity, max = -Infinity, nonZero = 0, valid = 0;
+    const checkLen = Math.min(row.length, 10000);
+    for (let j = 0; j < checkLen; j++) {
+      const v = row[j]!;
+      if (!isFinite(v)) continue;
+      valid++;
+      if (v !== 0) nonZero++;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (valid === 0 || nonZero === 0) continue;
+    // Reject channels with values that no real sensor produces
+    if (min < -200 || max > 50000) continue;
+
     cols.push({
       headerName: ecu.headerName, columnName: ecu.columnName,
       unit: ecu.unit,
       format: (i) => {
         let v = row[i]!;
+        if (!isFinite(v)) v = 0;
         if (ecu.canonical === 'throttle') v *= 100;
+        // Clamp to safe range — Circuit Tools rejects extreme values
+        v = Math.max(-9999, Math.min(99999, v));
         return formatSci(v);
       },
     });
