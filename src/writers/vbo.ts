@@ -148,10 +148,13 @@ function buildVboContent(session: Session): string {
   }
   lines.push('');
 
-  // [channel units] section — (null) for dimensionless, matching real VBOX format
+  // [channel units] section — ONLY for ECU channels (after the core 10 GPS columns).
+  // The core 10 (sats, time, lat, lon, velocity, heading, height, vert-vel,
+  // sampleperiod, solution_type) do NOT get entries in [channel units].
   lines.push('[channel units]');
-  for (const col of vboColumns) {
-    lines.push(col.unit || '(null)');
+  const CORE_COUNT = 10;
+  for (let i = CORE_COUNT; i < vboColumns.length; i++) {
+    lines.push(vboColumns[i]!.unit || '(null)');
   }
   lines.push('');
 
