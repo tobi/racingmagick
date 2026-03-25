@@ -2,10 +2,7 @@ import { readFile } from 'fs/promises';
 import { Session } from '../session';
 import { ParseError } from '../types';
 import type { RawChannel, LapBoundary, SessionWarning, SessionData } from '../types';
-
-const MAGIC = 0x40;
-const CHANNEL_META_SIZE = 124;
-const MAX_CHANNELS = 200;
+import { MOTEC_MAGIC, MOTEC_CHANNEL_META_SIZE, MOTEC_MIN_FILE_SIZE, MAX_CHANNELS_PER_FILE } from '../constants';
 
 const latin1 = new TextDecoder('latin1');
 
@@ -68,8 +65,10 @@ function readChannelData(
   fileSize: number,
 ): Float64Array {
   if (meta.nData === 0) return new Float64Array(0);
+  if (meta.dataPtr >= fileSize) return new Float64Array(0);
 
   const bytesPerSample = meta.datatype;
+  if (bytesPerSample <= 0 || bytesPerSample > 8) return new Float64Array(0);
   const requiredBytes = meta.dataPtr + meta.nData * bytesPerSample;
   const clampedCount = requiredBytes > fileSize
     ? Math.floor((fileSize - meta.dataPtr) / bytesPerSample)
@@ -110,13 +109,18 @@ function readChannelData(
   return samples;
 }
 
-function parseDate(dateStr: string, timeStr: string): Date {
+function parseDate(dateStr: string, timeStr: string, warnings: SessionWarning[]): Date {
   // Date format: "dd/MM/yyyy", Time format: "HH:mm:ss"
   const parts = dateStr.split('/');
   if (parts.length === 3) {
     const [day, month, year] = parts;
-    return new Date(`${year}-${month}-${day}T${timeStr || '00:00:00'}`);
+    const parsed = new Date(`${year}-${month}-${day}T${timeStr || '00:00:00'}`);
+    if (!isNaN(parsed.getTime())) return parsed;
   }
+  warnings.push({
+    code: 'suspicious-data-range',
+    message: `Could not parse session date "${dateStr}" / "${timeStr}"; using current time`,
+  });
   return new Date();
 }
 
@@ -144,14 +148,15 @@ export async function parseMotec(data: Uint8Array, fileURL: string): Promise<Ses
   const fileSize = data.byteLength;
 
   // Validate magic
-  if (fileSize < 0x1A0) {
-    throw new ParseError('File too small to be a valid MoTeC .ld file', 'motec');
+  if (fileSize < MOTEC_MIN_FILE_SIZE) {
+    throw new ParseError('File too small to be a valid MoTeC .ld file', 'motec', { fileURL });
   }
   const magic = view.getUint32(0, true);
-  if (magic !== MAGIC) {
+  if (magic !== MOTEC_MAGIC) {
     throw new ParseError(
-      `Invalid MoTeC magic: expected 0x${MAGIC.toString(16)}, got 0x${magic.toString(16)}`,
+      `Invalid MoTeC magic: expected 0x${MOTEC_MAGIC.toString(16)}, got 0x${magic.toString(16)}`,
       'motec',
+      { fileURL },
     );
   }
 
@@ -162,12 +167,14 @@ export async function parseMotec(data: Uint8Array, fileURL: string): Promise<Ses
   const driver = readString(view, 0x9E, 64);
   const vehicle = readString(view, 0xDE, 64);
   const venue = readString(view, 0x15E, 64);
-  const date = parseDate(dateStr, timeStr);
+  // Read channel data (warnings declared early for date parsing)
+  const warnings: SessionWarning[] = [];
+  const date = parseDate(dateStr, timeStr, warnings);
 
   // Walk channel linked list
   const channelMetas: ChannelMeta[] = [];
   let addr = channelMetaPtr;
-  while (addr > 0 && addr + CHANNEL_META_SIZE <= fileSize && channelMetas.length < MAX_CHANNELS) {
+  while (addr > 0 && addr + MOTEC_CHANNEL_META_SIZE <= fileSize && channelMetas.length < MAX_CHANNELS_PER_FILE) {
     const meta = parseChannelMeta(view, addr);
     channelMetas.push(meta);
     if (meta.nextAddr === 0 || meta.nextAddr <= addr) break;
@@ -175,11 +182,8 @@ export async function parseMotec(data: Uint8Array, fileURL: string): Promise<Ses
   }
 
   if (channelMetas.length === 0) {
-    throw new ParseError('No channels found in MoTeC file', 'motec');
+    throw new ParseError('No channels found in MoTeC file', 'motec', { fileURL });
   }
-
-  // Read channel data
-  const warnings: SessionWarning[] = [];
   const rawChannels: RawChannel[] = [];
 
   for (const meta of channelMetas) {
@@ -201,7 +205,7 @@ export async function parseMotec(data: Uint8Array, fileURL: string): Promise<Ses
   }
 
   if (rawChannels.length === 0) {
-    throw new ParseError('All channels in MoTeC file have 0 samples', 'motec');
+    throw new ParseError('All channels in MoTeC file have 0 samples', 'motec', { fileURL });
   }
 
   // Parse companion .ldx for lap beacons

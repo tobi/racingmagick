@@ -3,6 +3,7 @@ import { LapSample, LapSampleSlice } from './lap-sample';
 import { CH_TRACK_POSITION, CH_TIME, CH_DISTANCE, CH_SPEED } from './types';
 import type { LapInfo, ChannelAvailability, LapDelta, PositionSource, SectorTime, LapError as LapErrorType } from './types';
 import { LapError } from './types';
+import { SPEED_BIAS_ALPHA, SPEED_BIAS_LOOKBACK } from './constants';
 
 /**
  * A Lap is a range [startIdx, endIdx) into a Session's ChannelMatrix,
@@ -72,16 +73,21 @@ export class Lap {
 
     // Binary search for bracketing samples within this lap
     const [lo, hi] = this._findBracket(tpArr, pos);
+
+    if (lo === hi) {
+      return new LapSample(this.matrix, lo);
+    }
+
     const span = tpArr[hi] - tpArr[lo];
     const rawFraction = span > 0 ? (pos - tpArr[lo]) / span : 0;
 
-    // Speed-aware bias
+    // Speed-aware bias: adjusts the interpolation fraction so that slower
+    // sections (corners) get more weight — reflecting time spent there.
     const t = this._lerpWithSpeedBias(lo, hi, rawFraction);
 
-    // Return interpolated sample at the biased position
-    // For simplicity, return the nearest sample (TODO: true interpolation)
-    const idx = Math.round(lo + t * (hi - lo));
-    return new LapSample(this.matrix, Math.min(idx, this.endIdx - 1));
+    // True linear interpolation: return an interpolated sample that blends
+    // lo and hi values by the biased fraction t.
+    return new LapSample(this.matrix, lo, hi, t);
   }
 
   /** Get N evenly-spaced samples across the lap by track position. */
@@ -278,9 +284,9 @@ export class Lap {
     return [lo, hi];
   }
 
-  _lerpWithSpeedBias(lo: number, hi: number, rawFraction: number, alpha: number = 0.7): number {
+  _lerpWithSpeedBias(lo: number, hi: number, rawFraction: number, alpha: number = SPEED_BIAS_ALPHA): number {
     const speed = this.matrix.channels[CH_SPEED];
-    const lookback = 4;
+    const lookback = SPEED_BIAS_LOOKBACK;
 
     let ema = speed[Math.max(0, lo - lookback)];
     for (let i = Math.max(0, lo - lookback + 1); i <= lo; i++) {

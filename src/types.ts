@@ -1,7 +1,15 @@
 // ── Error Types ──────────────────────────────────────────────────────
 
 export class ParseError extends Error {
-  constructor(message: string, public readonly format?: string) {
+  constructor(
+    message: string,
+    public readonly format?: string,
+    public readonly context?: {
+      readonly channel?: string;
+      readonly offset?: number;
+      readonly fileURL?: string;
+    },
+  ) {
     super(message);
     this.name = 'ParseError';
   }

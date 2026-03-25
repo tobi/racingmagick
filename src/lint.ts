@@ -14,6 +14,12 @@
  */
 
 import type { Session } from './session';
+import { CH_TIME, CH_DISTANCE, CH_SPEED, CH_THROTTLE } from './types';
+import {
+  MAX_VEHICLE_SPEED_KMH, MAX_RPM, MAX_G_FORCE, MAX_LAP_TIME_S,
+  MAX_SESSION_DURATION_S, LONG_SESSION_THRESHOLD_S, LAP_TIME_OUTLIER_RATIO,
+  MAX_TRACK_LENGTH_M, MIN_FLYING_LAP_DISTANCE_M,
+} from './constants';
 
 export type IssueSeverity = 'error' | 'warning';
 
@@ -37,10 +43,10 @@ export function lint(session: Session): LintIssue[] {
   if (session.totalDuration <= 0) {
     issues.push({ severity: 'error', code: 'zero-duration', message: 'Session has zero or negative duration' });
   }
-  if (session.totalDuration > 24 * 3600) {
+  if (session.totalDuration > MAX_SESSION_DURATION_S) {
     issues.push({ severity: 'error', code: 'excessive-duration', message: `Session duration ${(session.totalDuration/3600).toFixed(1)}h exceeds 24h — probably a parsing error` });
   }
-  if (session.totalDuration > 2 * 3600) {
+  if (session.totalDuration > LONG_SESSION_THRESHOLD_S) {
     issues.push({ severity: 'warning', code: 'long-session', message: `Session is ${(session.totalDuration/3600).toFixed(1)}h — verify this is a single stint` });
   }
 
@@ -66,7 +72,7 @@ export function lint(session: Session): LintIssue[] {
 
   // ── Time channel ─────────────────────────────────────────────────
 
-  const time = matrix.channels[0]!;
+  const time = matrix.channels[CH_TIME];
   // Monotonicity
   let timeBackwards = 0;
   for (let i = 1; i < time.length; i++) {
@@ -78,14 +84,14 @@ export function lint(session: Session): LintIssue[] {
 
   // ── Speed channel ────────────────────────────────────────────────
 
-  const speed = matrix.channels[3]!;
+  const speed = matrix.channels[CH_SPEED];
   const speedStats = channelStats(speed);
 
   if (speedStats.nanFrac > 0.01) {
     issues.push({ severity: 'error', code: 'speed-nan', message: `Speed has ${(speedStats.nanFrac*100).toFixed(1)}% NaN values`, channel: 'speed' });
   }
-  if (speedStats.max > 400) {
-    issues.push({ severity: 'error', code: 'speed-too-fast', message: `Max speed ${speedStats.max.toFixed(0)} km/h exceeds 400 km/h`, channel: 'speed' });
+  if (speedStats.max > MAX_VEHICLE_SPEED_KMH) {
+    issues.push({ severity: 'error', code: 'speed-too-fast', message: `Max speed ${speedStats.max.toFixed(0)} km/h exceeds ${MAX_VEHICLE_SPEED_KMH} km/h`, channel: 'speed' });
   }
   if (speedStats.min < -5) {
     issues.push({ severity: 'error', code: 'speed-negative', message: `Negative speed ${speedStats.min.toFixed(1)} km/h`, channel: 'speed' });
@@ -99,7 +105,7 @@ export function lint(session: Session): LintIssue[] {
 
   // ── Throttle channel ─────────────────────────────────────────────
 
-  const throttle = matrix.channels[4]!;
+  const throttle = matrix.channels[CH_THROTTLE];
   const thrStats = channelStats(throttle);
 
   if (thrStats.nanFrac > 0.01) {
@@ -139,8 +145,8 @@ export function lint(session: Session): LintIssue[] {
   const rpm = matrix.row('rpm');
   if (rpm) {
     const rpmStats = channelStats(rpm);
-    if (rpmStats.max > 20000) {
-      issues.push({ severity: 'error', code: 'rpm-too-high', message: `RPM max ${rpmStats.max.toFixed(0)} exceeds 20000`, channel: 'rpm' });
+    if (rpmStats.max > MAX_RPM) {
+      issues.push({ severity: 'error', code: 'rpm-too-high', message: `RPM max ${rpmStats.max.toFixed(0)} exceeds ${MAX_RPM}`, channel: 'rpm' });
     }
     if (speedStats.max > 100 && rpmStats.max < 500) {
       issues.push({ severity: 'warning', code: 'rpm-too-low', message: `Car reaches ${speedStats.max.toFixed(0)} km/h but RPM max only ${rpmStats.max.toFixed(0)}`, channel: 'rpm' });
@@ -202,7 +208,7 @@ export function lint(session: Session): LintIssue[] {
     const row = matrix.row(ch);
     if (!row) continue;
     const stats = channelStats(row);
-    if (Math.abs(stats.max) > 30 || Math.abs(stats.min) > 30) {
+    if (Math.abs(stats.max) > MAX_G_FORCE || Math.abs(stats.min) > MAX_G_FORCE) {
       issues.push({ severity: 'error', code: `${ch}-extreme`, message: `${label} [${stats.min.toFixed(1)}, ${stats.max.toFixed(1)}]G — sensor reading corrupt`, channel: ch });
     }
   }
@@ -217,7 +223,7 @@ export function lint(session: Session): LintIssue[] {
     const lapSecs = lap.lapTime / 1000;
 
     // No track lap > 9 minutes (Nürburgring Nordschleife is ~8:30 for GT3)
-    if (lapSecs > 9 * 60 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
+    if (lapSecs > MAX_LAP_TIME_S && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
       issues.push({ severity: 'warning', code: 'lap-too-long', message: `${lap.displayLabel} is ${formatDuration(lapSecs)} — likely a single-lap session, not a misdetection`, channel: 'lap' });
     }
 
@@ -234,12 +240,12 @@ export function lint(session: Session): LintIssue[] {
 
     // Lap distance sanity (shortest real track ~1km, longest ~25km)
     if (lap.totalDistance > 0) {
-      if (lap.totalDistance < 500 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
+      if (lap.totalDistance < MIN_FLYING_LAP_DISTANCE_M && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
         issues.push({ severity: 'warning', code: 'lap-short-distance', message: `${lap.displayLabel} distance ${lap.totalDistance.toFixed(0)}m — seems short for a track lap` });
       }
-      if (lap.totalDistance > 30000 && session.lapCount > 1) {
+      if (lap.totalDistance > MAX_TRACK_LENGTH_M && session.lapCount > 1) {
         issues.push({ severity: 'error', code: 'lap-long-distance', message: `${lap.displayLabel} distance ${(lap.totalDistance/1000).toFixed(1)}km — no track is 30km+` });
-      } else if (lap.totalDistance > 30000) {
+      } else if (lap.totalDistance > MAX_TRACK_LENGTH_M) {
         issues.push({ severity: 'warning', code: 'lap-long-distance', message: `${lap.displayLabel} distance ${(lap.totalDistance/1000).toFixed(1)}km — single-lap session covering full run` });
       }
     }
@@ -257,7 +263,7 @@ export function lint(session: Session): LintIssue[] {
     const median = times.sort((a, b) => a - b)[Math.floor(times.length / 2)]!;
     for (const lap of timedLaps) {
       const ratio = (lap.lapTime / 1000) / median;
-      if (ratio > 3 || ratio < 0.33) {
+      if (ratio > LAP_TIME_OUTLIER_RATIO || ratio < 1 / LAP_TIME_OUTLIER_RATIO) {
         issues.push({ severity: 'warning', code: 'lap-time-outlier', message: `${lap.displayLabel} time ${formatDuration(lap.lapTime/1000)} is ${ratio.toFixed(1)}x the median — possible misdetection` });
       }
     }
@@ -317,7 +323,7 @@ export function lint(session: Session): LintIssue[] {
 
   // ── Distance channel ─────────────────────────────────────────────
 
-  const dist = matrix.channels[1]!;
+  const dist = matrix.channels[CH_DISTANCE];
   const totalDist = dist[dist.length - 1]! - dist[0]!;
   if (totalDist < 0 && session.totalDuration > 30) {
     issues.push({ severity: 'error', code: 'distance-negative', message: 'Total distance is negative — distance channel runs backwards', channel: 'distance' });

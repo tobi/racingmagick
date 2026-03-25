@@ -30,10 +30,13 @@ export const toKmh: ChannelTransform = (v, u) => {
 
 export const toRatio: ChannelTransform = (v, u) => {
   const ul = u.toLowerCase().trim();
-  if (ul === '%' || ul === 'pct') return v / 100;
+  if (ul === '%' || ul === 'pct' || ul === 'percent') return v / 100;
   if (ul === 'deg') return v / 100;
   if (ul === 'rad') return v / 1.745;
-  if (v > 1.5) return v / 100; // heuristic: looks like percentage
+  // Heuristic fallback: only for channels whose unit is empty but values
+  // consistently look like 0–100 percentages. Threshold raised to avoid
+  // false positives on legitimate small ratios > 1.0 (e.g., brake bias 1.2).
+  if (ul === '' && v > 5) return v / 100;
   return v;
 };
 
@@ -431,7 +434,7 @@ for (const [canonical, priorities] of Object.entries(CHANNEL_PRIORITIES)) {
 // ── Public API ───────────────────────────────────────────────────────
 
 /** Normalize a raw channel name to lowercase, strip punctuation. */
-function normalize(rawName: string): string {
+export function normalize(rawName: string): string {
   return rawName.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
 }
 
@@ -515,7 +518,7 @@ export function resolveAllChannels(
  * If only post-TC exists, map it to `throttle` as a fallback.
  */
 export function resolveThrottleChannels(
-  resolved: Map<string, any>,
+  resolved: Map<string, { rawIndex: number; transform: ChannelTransform | null }>,
 ): { remapped: boolean; warning: string | null } {
   const hasDriver = resolved.has('throttle');
   const hasActual = resolved.has('throttleActual');
