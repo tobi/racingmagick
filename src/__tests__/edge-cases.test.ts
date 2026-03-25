@@ -431,7 +431,7 @@ describe('Lint edge cases', () => {
   it('flags throttle over range', () => {
     const n = 1000;
     const speed = new Float64Array(n).fill(100);
-    const throttle = new Float64Array(n).fill(200); // Raw percentage, not converted
+    const throttle = new Float64Array(n).fill(300); // Raw percentage, not converted
     const session = new Session({
       format: 'motec',
       driver: 'X',

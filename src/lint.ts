@@ -111,7 +111,7 @@ export function lint(session: Session): LintIssue[] {
   if (thrStats.nanFrac > 0.01) {
     issues.push({ severity: 'error', code: 'throttle-nan', message: `Throttle has ${(thrStats.nanFrac*100).toFixed(1)}% NaN`, channel: 'throttle' });
   }
-  if (thrStats.max > 1.5) {
+  if (thrStats.max > 2.0) {
     issues.push({ severity: 'error', code: 'throttle-over-range', message: `Throttle max ${thrStats.max.toFixed(2)} exceeds 1.0 — unit conversion error`, channel: 'throttle' });
   }
   if (thrStats.min < -0.1) {

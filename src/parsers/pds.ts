@@ -131,6 +131,19 @@ interface ChannelDef {
   typeCode: number;
 }
 
+/** Infer unit from PDS channel name when unit metadata is missing */
+function inferPdsUnit(name: string): string {
+  const nl = name.toLowerCase();
+  if (/speed|vel/i.test(nl)) return 'm/s';
+  if (/steer/i.test(nl)) return 'deg';
+  if (/accel/i.test(nl)) return 'g';
+  if (/damper/i.test(nl)) return 'mm';
+  if (/tps|throttle|pps|fbw.*tps/i.test(nl)) return '';
+  // PDS pressure channels store values in Pa when no unit is specified
+  if (/brake.*press|p_f_brake|p_r_brake|p_tyre|tire.*press|tyre.*press/i.test(nl)) return 'pa';
+  return '';
+}
+
 const MARKER = 0x7c72;
 
 function findChannelDefs(view: DataView, layout: Layout, isExport: boolean = false): ChannelDef[] {
@@ -185,7 +198,8 @@ function tryMarkerDefs(view: DataView, defsOffset: number, chunkOffset: number):
     const channelId = view.getUint32(pos + 0x08, true);
     if (channelId === 0) continue;
     const name = readUtf16le(view, pos + 0x10, 112);
-    const unit = readUtf16le(view, pos + 0x98, 32);
+    let unit = readUtf16le(view, pos + 0x98, 32);
+    if (!unit) unit = inferPdsUnit(name);
     const typeCode = pos + 0xDC <= view.byteLength ? view.getUint32(pos + 0xD8, true) : 6;
     if (name.length > 0) {
       defs.push({ id: channelId, name, unit, typeCode });
@@ -201,7 +215,7 @@ function parseMarkerlessDefs(
   recordSize: number,
   count: number,
   _chunkOffset: number,
-  inferUnits: boolean = false,
+  _inferUnits: boolean = false,
 ): ChannelDef[] {
   const defs: ChannelDef[] = [];
   for (let i = 0; i < count; i++) {
@@ -218,16 +232,8 @@ function parseMarkerlessDefs(
     if (recordSize >= 0x98 + 32) {
       unit = readUtf16le(view, pos + 0x98, 32);
     }
-    // Export files often have no unit metadata. Infer from channel name.
-    if (!unit && inferUnits) {
-      const nl = name.toLowerCase();
-      if (/speed|vel/i.test(nl)) unit = 'm/s';
-      else if (/steer/i.test(nl)) unit = 'deg';
-      else if (/accel/i.test(nl)) unit = 'g';
-      else if (/damper/i.test(nl)) unit = 'mm';
-      else if (/tps|throttle|pps|fbw.*tps/i.test(nl)) unit = 'ratio';
-      else if (/brake.*press|p_f_brake|p_r_brake/i.test(nl)) unit = 'bar';
-    }
+    // Infer units from channel name when metadata is missing
+    if (!unit) unit = inferPdsUnit(name);
 
     // Export files store data as float64 (type 7). The chunk records have the
     // sequence number as channelId, so use the actual seq number as the def ID.

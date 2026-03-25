@@ -272,8 +272,8 @@ function buildUnitMap(
   }
 
   // Custom channel units — from [channel units] section
-  // These map to the custom channels in header (after built-in ones)
-  const customStart = builtinCount;
+  // [channel units] starts from avisynctime (the last built-in), not after all built-ins
+  const customStart = builtinCount - 1;
   for (let i = 0; i < channelUnits.length; i++) {
     const headerIdx = customStart + i;
     if (headerIdx < header.length) {

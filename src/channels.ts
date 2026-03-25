@@ -45,6 +45,7 @@ export const toBar: ChannelTransform = (v, u) => {
   if (ul === 'psi') return v * 0.0689476;
   if (ul === 'kpa') return v * 0.01;
   if (ul === 'mbar') return v * 0.001;
+  if (ul === 'pa') return v * 0.00001;
   return v;
 };
 
