@@ -1,5 +1,6 @@
 import { CH_TIME, CH_DISTANCE, CH_TRACK_POSITION, CH_SPEED, CH_THROTTLE, WELL_KNOWN_CHANNELS } from './types';
 import type { ChannelAvailability } from './types';
+import { MAX_SAMPLE_RATE_HZ, DISCRETE_CHANNELS } from './constants';
 
 /**
  * The core data structure. One per session, shared by all laps.
@@ -156,8 +157,8 @@ export function buildChannelMatrix(
     if (ch.frequency > maxFreq) maxFreq = ch.frequency;
   }
 
-  // Cap at 100Hz by default
-  const hz = targetHz ?? Math.min(maxFreq, 100);
+  // Cap at MAX_SAMPLE_RATE_HZ by default
+  const hz = targetHz ?? Math.min(maxFreq, MAX_SAMPLE_RATE_HZ);
   if (hz <= 0) throw new Error(`Invalid target frequency: ${hz}`);
 
   // Determine total duration from the highest-rate channel
@@ -169,9 +170,6 @@ export function buildChannelMatrix(
 
   const outputCount = Math.floor(maxDuration * hz) + 1;
   if (outputCount <= 0) throw new Error('Zero-length output after resampling');
-
-  // Discrete channels use nearest-neighbor interpolation
-  const DISCRETE_CHANNELS = new Set(['gear', 'lapNumber', 'carOnJack', 'gpsFix', 'gpsSatellites']);
 
   // Allocate well-known channels first (indices 0-4)
   const nameToIndex = new Map<string, number>();

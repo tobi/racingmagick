@@ -119,7 +119,7 @@ function findLayout(entries: DirEntry[], fileSize: number): Layout {
       chunkCount,
     };
   }
-  throw new ParseError('No valid PDS layout found in directory', 'pds');
+  throw new ParseError('No valid PDS layout found in directory', 'pds', { fileURL: '' });
 }
 
 // ── Channel definitions ───────────────────────────────────────────────
@@ -150,7 +150,7 @@ function findChannelDefs(view: DataView, layout: Layout, isExport: boolean = fal
     }
   }
 
-  throw new ParseError('No valid channel definitions found', 'pds');
+  throw new ParseError('No valid channel definitions found', 'pds', { fileURL: '' });
 }
 
 function tryMarkerDefs(view: DataView, defsOffset: number, chunkOffset: number): ChannelDef[] {
@@ -341,10 +341,6 @@ function parseChunks(
       });
     }
   }
-
-  // Mark as export for stride-aware decoding
-  (chunks as any).__exportVariant = true;
-  (chunks as any).__numChannels = numChannels;
 
   return chunks;
 }
@@ -595,7 +591,7 @@ function parseFilename(fileURL: string): FilenameMeta {
 export function parsePds(data: Uint8Array, fileURL: string): Session {
   const fileSize = data.byteLength;
   if (fileSize < 0x100) {
-    throw new ParseError('File too small to be a valid PDS file', 'pds');
+    throw new ParseError('File too small to be a valid PDS file', 'pds', { fileURL });
   }
 
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -694,7 +690,7 @@ export function parsePds(data: Uint8Array, fileURL: string): Session {
   }
 
   if (rawChannels.length === 0) {
-    throw new ParseError('No channels decoded from PDS file', 'pds');
+    throw new ParseError('No channels decoded from PDS file', 'pds', { fileURL });
   }
 
   // 7. Detect lap boundaries

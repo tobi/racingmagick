@@ -1,7 +1,9 @@
 import { ChannelMatrix } from './channel-matrix';
-import { CH_SPEED } from './types';
+import { CH_TIME, CH_DISTANCE, CH_SPEED, CH_TRACK_POSITION } from './types';
 import { LapKind } from './types';
-import type { LapInfo, LapBoundary, PositionSource } from './types';
+import type { LapInfo, LapBoundary, PositionSource, CircuitInfo, SectorTime, TimingLine } from './types';
+import { PIT_SPEED_THRESHOLD_KMH, MIN_MOVING_SPEED_KMH, MIN_LAP_DURATION_S } from './constants';
+import { haversine } from './gps';
 
 interface LapRange {
   startIdx: number;
@@ -15,7 +17,7 @@ export function classifyLap(
   lap: LapRange,
   matrix: ChannelMatrix,
   prevLap: { kind: LapKind } | null,
-  pitSpeedThreshold: number = 60,
+  pitSpeedThreshold: number = PIT_SPEED_THRESHOLD_KMH,
 ): LapKind {
   const speed = matrix.channels[CH_SPEED];
   const n = lap.endIdx - lap.startIdx;
@@ -64,13 +66,13 @@ export function classifyLap(
   }
 
   // Slow lap: very slow and >30s
-  if (minSpeed < 10 && lapDuration > 30) {
+  if (minSpeed < MIN_MOVING_SPEED_KMH && lapDuration > MIN_LAP_DURATION_S) {
     return LapKind.Slow;
   }
 
   // Partial lap: too short to be real (<30s). These are fragments at
   // session start/end where recording was cut mid-lap.
-  if (lapDuration < 30) {
+  if (lapDuration < MIN_LAP_DURATION_S) {
     return LapKind.Slow;
   }
 
@@ -89,6 +91,7 @@ export function buildLaps(
   matrix: ChannelMatrix,
   boundaries: LapBoundary[],
   positionSource: PositionSource,
+  circuit?: CircuitInfo | null,
 ): LapInfo[] {
   if (boundaries.length < 2) {
     // Entire session is one lap
@@ -96,17 +99,19 @@ export function buildLaps(
     if (sampleCount === 0) return [];
 
     const duration = matrix.duration;
+    const timeChannel = matrix.channels[CH_TIME];
+    const distChannel = matrix.channels[CH_DISTANCE];
     return [{
       lapIndex: 0,
       lapNumber: 1,
       displayLabel: 'L1',
       kind: LapKind.Flying,
       lapTime: duration * 1000,
-      startTime: matrix.channels[0][0],
-      endTime: matrix.channels[0][sampleCount - 1],
+      startTime: timeChannel[0],
+      endTime: timeChannel[sampleCount - 1],
       sampleRate: matrix.sampleRate,
       sampleCount,
-      totalDistance: matrix.channels[1][sampleCount - 1] - matrix.channels[1][0],
+      totalDistance: distChannel[sampleCount - 1] - distChannel[0],
       startIdx: 0,
       endIdx: sampleCount,
       sectors: null,
@@ -115,7 +120,7 @@ export function buildLaps(
   }
 
   // Convert boundary times to sample indices
-  const timeChannel = matrix.channels[0];
+  const timeChannel = matrix.channels[CH_TIME];
   const indices: number[] = [];
   for (const b of boundaries) {
     if (b.sampleIndex !== undefined) {
@@ -146,7 +151,7 @@ export function buildLaps(
   // Assign lap numbers (flying laps only)
   let flyingCount = 0;
   const laps: LapInfo[] = [];
-  const distChannel = matrix.channels[1];
+  const distChannel = matrix.channels[CH_DISTANCE];
 
   for (let i = 0; i < rawLaps.length; i++) {
     const { startIdx, endIdx } = rawLaps[i];
@@ -168,6 +173,11 @@ export function buildLaps(
     const endTime = timeChannel[endIdx - 1];
     const totalDistance = distChannel[endIdx - 1] - distChannel[startIdx];
 
+    // Compute sector times if timing lines are available
+    const sectors = isTimed && circuit?.timingLines && circuit.timingLines.length > 0
+      ? computeSectorTimes(matrix, startIdx, endIdx, circuit.timingLines)
+      : null;
+
     laps.push({
       lapIndex: i,
       lapNumber,
@@ -181,7 +191,7 @@ export function buildLaps(
       totalDistance,
       startIdx,
       endIdx,
-      sectors: null,
+      sectors,
       positionSource,
     });
   }
@@ -202,4 +212,90 @@ function findClosestIndex(sortedArr: Float64Array, target: number): number {
     return lo - 1;
   }
   return lo;
+}
+
+/**
+ * Compute sector times from timing lines within a lap range.
+ * Uses GPS coordinates to detect when the car crosses each split line.
+ */
+export function computeSectorTimes(
+  matrix: ChannelMatrix,
+  startIdx: number,
+  endIdx: number,
+  timingLines: ReadonlyArray<TimingLine>,
+): SectorTime[] | null {
+  const latRow = matrix.row('gpsLat');
+  const lonRow = matrix.row('gpsLon');
+  if (!latRow || !lonRow) return null;
+
+  const splits = timingLines.filter(tl => tl.type === 'split');
+  if (splits.length === 0) return null;
+
+  const timeChannel = matrix.channels[CH_TIME];
+  const tpChannel = matrix.channels[CH_TRACK_POSITION];
+
+  // Find the crossing index for each split line
+  const crossings: Array<{ splitIdx: number; sampleIdx: number; name: string }> = [];
+
+  for (let s = 0; s < splits.length; s++) {
+    const line = splits[s];
+    const lineMidLat = (line.start.lat + line.end.lat) / 2;
+    const lineMidLon = (line.start.lon + line.end.lon) / 2;
+
+    // Find the sample closest to this timing line
+    let bestDist = Infinity;
+    let bestIdx = -1;
+    for (let i = startIdx; i < endIdx; i++) {
+      const dist = haversine(latRow[i], lonRow[i], lineMidLat, lineMidLon);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    }
+
+    // Only accept crossings within 50m of the line
+    if (bestIdx >= 0 && bestDist < 50) {
+      crossings.push({ splitIdx: s, sampleIdx: bestIdx, name: line.name });
+    }
+  }
+
+  if (crossings.length === 0) return null;
+
+  // Sort crossings by sample index (order around the track)
+  crossings.sort((a, b) => a.sampleIdx - b.sampleIdx);
+
+  // Build sector times: from lap start → first split, between splits, last split → lap end
+  const sectors: SectorTime[] = [];
+  let prevIdx = startIdx;
+  let prevPosition = tpChannel[startIdx];
+
+  for (let c = 0; c < crossings.length; c++) {
+    const crossing = crossings[c];
+    const sectorStart = prevPosition;
+    const sectorEnd = tpChannel[crossing.sampleIdx];
+    const sectorTime = (timeChannel[crossing.sampleIdx] - timeChannel[prevIdx]) * 1000;
+
+    sectors.push({
+      sector: c + 1,
+      name: crossing.name || `S${c + 1}`,
+      time: sectorTime,
+      startPosition: sectorStart,
+      endPosition: sectorEnd,
+    });
+
+    prevIdx = crossing.sampleIdx;
+    prevPosition = sectorEnd;
+  }
+
+  // Final sector: last split → lap end
+  const lastSectorTime = (timeChannel[endIdx - 1] - timeChannel[prevIdx]) * 1000;
+  sectors.push({
+    sector: sectors.length + 1,
+    name: `S${sectors.length + 1}`,
+    time: lastSectorTime,
+    startPosition: prevPosition,
+    endPosition: tpChannel[endIdx - 1],
+  });
+
+  return sectors;
 }

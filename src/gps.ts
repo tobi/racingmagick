@@ -3,7 +3,12 @@
  * coordinate conversions, and adaptive smoothing.
  */
 
-const EARTH_RADIUS = 6371e3; // meters
+import {
+  EARTH_RADIUS_M,
+  MIN_GPS_SATELLITES, GPS_HIGH_QUALITY_SATELLITES,
+  GPS_JUMP_FACTOR, GPS_TELEPORT_THRESHOLD_M,
+  GPS_STATIONARY_SPEED_KMH, GPS_STATIONARY_JITTER_M,
+} from './constants';
 
 /** Haversine distance in meters between two WGS84 points. */
 export function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -13,7 +18,7 @@ export function haversine(lat1: number, lon1: number, lat2: number, lon2: number
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return EARTH_RADIUS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 /** Convert NMEA coordinate (DDMM.MMMMM) to decimal degrees. */
@@ -66,7 +71,7 @@ export function filterGpsForArcLength(
     const expectedDist = (speed[i] / 3.6) * dt;
 
     // Satellite count check
-    if (satellites && satellites[i] < 4) {
+    if (satellites && satellites[i] < MIN_GPS_SATELLITES) {
       valid[i] = false;
       invalidCount++;
       continue;
@@ -80,21 +85,21 @@ export function filterGpsForArcLength(
     }
 
     // Speed sanity: GPS jump vs expected movement
-    if (expectedDist > 0.5 && gpsDist > expectedDist * 3) {
+    if (expectedDist > 0.5 && gpsDist > expectedDist * GPS_JUMP_FACTOR) {
       valid[i] = false;
       invalidCount++;
       continue;
     }
 
     // Stationary jitter
-    if (speed[i] < 5 && gpsDist < 3) {
+    if (speed[i] < GPS_STATIONARY_SPEED_KMH && gpsDist < GPS_STATIONARY_JITTER_M) {
       valid[i] = false;
       invalidCount++;
       continue;
     }
 
     // Teleportation
-    if (gpsDist > 100) {
+    if (gpsDist > GPS_TELEPORT_THRESHOLD_M) {
       valid[i] = false;
       invalidCount++;
       continue;
@@ -203,7 +208,7 @@ export function smoothGps(
     }
 
     const speedKmh = speed[i];
-    const satBoost = satellites && satellites[i] < 8 ? 2 : 0;
+    const satBoost = satellites && satellites[i] < GPS_HIGH_QUALITY_SATELLITES ? 2 : 0;
     const halfWidth = Math.max(1, Math.min(10, Math.round(1 + speedKmh / 50 + satBoost)));
 
     let sumLat = 0, sumLon = 0, sumW = 0;

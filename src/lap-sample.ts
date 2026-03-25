@@ -4,35 +4,54 @@ import { CH_TIME, CH_DISTANCE, CH_TRACK_POSITION, CH_SPEED, CH_THROTTLE } from '
 /**
  * Zero-allocation view into the channel matrix at a given sample index.
  * Property access reads matrix.channels[ch][idx] directly.
+ *
+ * Supports linear interpolation between two samples when constructed
+ * with (matrix, loIdx, hiIdx, fraction). The fraction 0.0 = lo, 1.0 = hi.
  */
 export class LapSample {
   /** @internal */
   constructor(
     private readonly matrix: ChannelMatrix,
     private readonly idx: number,
+    private readonly hiIdx?: number,
+    private readonly frac?: number,
   ) {}
+
+  /** Read a channel value, with linear interpolation if this is an interpolated sample. */
+  private _val(chIdx: number): number {
+    const v = this.matrix.channels[chIdx][this.idx];
+    if (this.hiIdx !== undefined && this.frac !== undefined && this.frac > 0) {
+      return v + (this.matrix.channels[chIdx][this.hiIdx] - v) * this.frac;
+    }
+    return v;
+  }
 
   // Required channels — direct array access, no branching
   get time(): number {
-    return this.matrix.channels[CH_TIME][this.idx];
+    return this._val(CH_TIME);
   }
   get distance(): number {
-    return this.matrix.channels[CH_DISTANCE][this.idx];
+    return this._val(CH_DISTANCE);
   }
   get trackPosition(): number {
-    return this.matrix.channels[CH_TRACK_POSITION][this.idx];
+    return this._val(CH_TRACK_POSITION);
   }
   get speed(): number {
-    return this.matrix.channels[CH_SPEED][this.idx];
+    return this._val(CH_SPEED);
   }
   get throttle(): number {
-    return this.matrix.channels[CH_THROTTLE][this.idx];
+    return this._val(CH_THROTTLE);
   }
 
   // Optional channels — null if channel doesn't exist
   private _opt(name: string): number | null {
-    const row = this.matrix.row(name);
-    return row ? row[this.idx] : null;
+    const chIdx = this.matrix.nameToIndex.get(name);
+    if (chIdx === undefined) return null;
+    const v = this.matrix.channels[chIdx][this.idx];
+    if (this.hiIdx !== undefined && this.frac !== undefined && this.frac > 0) {
+      return v + (this.matrix.channels[chIdx][this.hiIdx] - v) * this.frac;
+    }
+    return v;
   }
 
   get rpm(): number | null { return this._opt('rpm'); }
