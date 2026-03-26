@@ -153,11 +153,12 @@ function buildVboContent(session: Session): string {
   }
   lines.push('');
 
-  // [channel units] section — ONLY for ECU channels (after the core 10 GPS columns).
-  // The core 10 (sats, time, lat, lon, velocity, heading, height, vert-vel,
-  // sampleperiod, solution_type) do NOT get entries in [channel units].
+  // [channel units] section — starts from avisynctime (index 11), covering
+  // avisynctime and all ECU channels. The first 11 columns (sats, time, lat,
+  // lon, velocity, heading, height, vert-vel, sampleperiod, solution_type,
+  // avifileindex) do NOT get entries.
   lines.push('[channel units]');
-  const CORE_COUNT = 10;
+  const CORE_COUNT = 11;
   for (let i = CORE_COUNT; i < vboColumns.length; i++) {
     lines.push(vboColumns[i]!.unit || '(null)');
   }
@@ -311,6 +312,15 @@ function buildColumnMap(session: Session): VboColumn[] {
   cols.push({ headerName: 'solution type', columnName: 'solution_type', unit: '', format: (i) => {
     const row = matrix.row('gpsFix');
     return row ? pad2(Math.round(row[i]!)) : '00';
+  }});
+
+  // avifileindex — video file index (VBOX standard column)
+  cols.push({ headerName: 'avifileindex', columnName: 'avifileindex', unit: '', format: () => '00001' });
+
+  // avisynctime — video sync time (VBOX standard column)
+  cols.push({ headerName: 'avisynctime', columnName: 'avitime', unit: 's', format: (i) => {
+    const sessionSecs = matrix.channels[0][i]!;
+    return sessionSecs.toFixed(4).padStart(10, '0');
   }});
 
   // ECU channels with physical value ranges for clamping.
