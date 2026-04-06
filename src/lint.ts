@@ -11,6 +11,14 @@
  * - Throttle/brake/steering must show variability if speed varies
  * - Required channels must exist and have plausible data
  * - etc.
+ *
+ * Design rules:
+ * - Each underlying problem produces ONE warning, not several cascading ones.
+ *   If throttle is all-zero, we emit "throttle-no-signal" — not also
+ *   "throttle-no-variation" + "throttle-low-max".
+ * - "Expected weirdness" doesn't warn. A 24-minute single-lap recording is
+ *   informational, not suspicious.
+ * - Messages name the symptom AND the likely cause when they differ.
  */
 
 import type { Session } from './session';
@@ -39,7 +47,6 @@ export function lint(session: Session): LintIssue[] {
 
   // ── Session-level checks ─────────────────────────────────────────
 
-  // Duration sanity
   if (session.totalDuration <= 0) {
     issues.push({ severity: 'error', code: 'zero-duration', message: 'Session has zero or negative duration' });
   }
@@ -50,13 +57,11 @@ export function lint(session: Session): LintIssue[] {
     issues.push({ severity: 'warning', code: 'long-session', message: `Session is ${(session.totalDuration/3600).toFixed(1)}h — verify this is a single stint` });
   }
 
-  // Sample count
   if (matrix.sampleCount === 0) {
     issues.push({ severity: 'error', code: 'no-samples', message: 'No data samples' });
     return issues; // can't check anything else
   }
 
-  // Sample rate
   if (session.sampleRate <= 0) {
     issues.push({ severity: 'error', code: 'zero-sample-rate', message: 'Sample rate is zero' });
   }
@@ -64,7 +69,6 @@ export function lint(session: Session): LintIssue[] {
     issues.push({ severity: 'warning', code: 'low-sample-rate', message: `Sample rate ${session.sampleRate}Hz is very low for telemetry analysis` });
   }
 
-  // Date sanity
   const year = session.date.getFullYear();
   if (year < 2000 || year > 2100) {
     issues.push({ severity: 'warning', code: 'bad-date', message: `Session date year ${year} seems wrong` });
@@ -73,7 +77,6 @@ export function lint(session: Session): LintIssue[] {
   // ── Time channel ─────────────────────────────────────────────────
 
   const time = matrix.channels[CH_TIME];
-  // Monotonicity
   let timeBackwards = 0;
   for (let i = 1; i < time.length; i++) {
     if (time[i]! < time[i - 1]!) timeBackwards++;
@@ -96,32 +99,37 @@ export function lint(session: Session): LintIssue[] {
   if (speedStats.min < -5) {
     issues.push({ severity: 'error', code: 'speed-negative', message: `Negative speed ${speedStats.min.toFixed(1)} km/h`, channel: 'speed' });
   }
-  if (speedStats.max < 10 && session.totalDuration > 60) {
+
+  // "car barely moved" subsumes any throttle/brake/rpm/gps mapping warnings —
+  // if speed never went above 10 km/h, none of those channels are expected
+  // to show variation either.
+  const carBarelyMoved = speedStats.max < 10 && session.totalDuration > 60;
+  const movingButNoSpeedVar = speedStats.stddev < 1 && speedStats.max >= 10 && session.totalDuration > 30;
+
+  if (carBarelyMoved) {
     issues.push({ severity: 'warning', code: 'speed-very-low', message: `Max speed only ${speedStats.max.toFixed(1)} km/h in a ${session.totalDuration.toFixed(0)}s session — car barely moved`, channel: 'speed' });
-  }
-  if (speedStats.stddev < 1 && session.totalDuration > 30) {
+  } else if (movingButNoSpeedVar) {
     issues.push({ severity: 'warning', code: 'speed-no-variation', message: 'Speed has no variation — constant speed or stuck sensor', channel: 'speed' });
   }
 
-  // ── Throttle channel ─────────────────────────────────────────────
+  // ── Driver input channels ───────────────────────────────────────
+  // For each pedal/control channel, classify into: missing, no-signal, range-error,
+  // or healthy. Emit at most ONE warning per channel.
 
   const throttle = matrix.channels[CH_THROTTLE];
   const thrStats = channelStats(throttle);
 
   if (thrStats.nanFrac > 0.01) {
     issues.push({ severity: 'error', code: 'throttle-nan', message: `Throttle has ${(thrStats.nanFrac*100).toFixed(1)}% NaN`, channel: 'throttle' });
-  }
-  if (thrStats.max > 2.0) {
+  } else if (thrStats.max > 2.0) {
     issues.push({ severity: 'error', code: 'throttle-over-range', message: `Throttle max ${thrStats.max.toFixed(2)} exceeds 1.0 — unit conversion error`, channel: 'throttle' });
-  }
-  if (thrStats.min < -0.1) {
+  } else if (thrStats.min < -0.1) {
     issues.push({ severity: 'error', code: 'throttle-negative', message: `Throttle min ${thrStats.min.toFixed(2)} is negative`, channel: 'throttle' });
-  }
-  // If speed varies, throttle must also vary (may indicate channel mapping issue)
-  if (speedStats.stddev > 10 && thrStats.stddev < 0.01) {
+  } else if (!carBarelyMoved && isNoSignal(thrStats)) {
+    issues.push({ severity: 'warning', code: 'throttle-no-signal', message: 'Throttle channel exists but is all-zero — pedal not logged or CAN not connected', channel: 'throttle' });
+  } else if (!carBarelyMoved && speedStats.stddev > 10 && thrStats.stddev < 0.01) {
     issues.push({ severity: 'warning', code: 'throttle-no-variation', message: 'Speed varies but throttle is constant — possible channel mapping issue', channel: 'throttle' });
-  }
-  if (speedStats.max > 50 && thrStats.max < 0.5) {
+  } else if (!carBarelyMoved && speedStats.max > 50 && thrStats.max < 0.5) {
     issues.push({ severity: 'warning', code: 'throttle-low-max', message: `Max throttle only ${(thrStats.max*100).toFixed(0)}% despite reaching ${speedStats.max.toFixed(0)} km/h`, channel: 'throttle' });
   }
 
@@ -130,13 +138,16 @@ export function lint(session: Session): LintIssue[] {
   const brake = matrix.row('brakePressure');
   if (brake) {
     const brStats = channelStats(brake);
-    if (speedStats.max > 100 && brStats.max < 1) {
-      issues.push({ severity: 'warning', code: 'brake-no-pressure', message: 'Car reaches 100+ km/h but brake pressure never exceeds 1 bar', channel: 'brakePressure' });
+    if (!carBarelyMoved) {
+      if (isNoSignal(brStats)) {
+        issues.push({ severity: 'warning', code: 'brake-no-signal', message: 'Brake pressure channel exists but is all-zero — sensor not logged or CAN not connected', channel: 'brakePressure' });
+      } else if (speedStats.max > 100 && brStats.max < 1) {
+        issues.push({ severity: 'warning', code: 'brake-no-pressure', message: 'Car reaches 100+ km/h but brake pressure never exceeds 1 bar', channel: 'brakePressure' });
+      } else if (speedStats.stddev > 10 && brStats.stddev < 0.01) {
+        issues.push({ severity: 'warning', code: 'brake-no-variation', message: 'Speed varies but brake is constant — channel mapping error', channel: 'brakePressure' });
+      }
     }
-    if (speedStats.stddev > 10 && brStats.stddev < 0.01) {
-      issues.push({ severity: 'warning', code: 'brake-no-variation', message: 'Speed varies but brake is constant — channel mapping error', channel: 'brakePressure' });
-    }
-  } else if (speedStats.max > 50) {
+  } else if (speedStats.max > 50 && !carBarelyMoved) {
     issues.push({ severity: 'warning', code: 'no-brake', message: 'No brake pressure channel — limited analysis', channel: 'brakePressure' });
   }
 
@@ -147,12 +158,14 @@ export function lint(session: Session): LintIssue[] {
     const rpmStats = channelStats(rpm);
     if (rpmStats.max > MAX_RPM) {
       issues.push({ severity: 'error', code: 'rpm-too-high', message: `RPM max ${rpmStats.max.toFixed(0)} exceeds ${MAX_RPM}`, channel: 'rpm' });
-    }
-    if (speedStats.max > 100 && rpmStats.max < 500) {
-      issues.push({ severity: 'warning', code: 'rpm-too-low', message: `Car reaches ${speedStats.max.toFixed(0)} km/h but RPM max only ${rpmStats.max.toFixed(0)}`, channel: 'rpm' });
-    }
-    if (speedStats.stddev > 10 && rpmStats.stddev < 10) {
-      issues.push({ severity: 'warning', code: 'rpm-no-variation', message: 'Speed varies but RPM is constant — channel mapping error', channel: 'rpm' });
+    } else if (!carBarelyMoved) {
+      if (isNoSignal(rpmStats)) {
+        issues.push({ severity: 'warning', code: 'rpm-no-signal', message: 'RPM channel exists but is all-zero — engine sensor not logged or CAN not connected', channel: 'rpm' });
+      } else if (speedStats.max > 100 && rpmStats.max < 500) {
+        issues.push({ severity: 'warning', code: 'rpm-too-low', message: `Car reaches ${speedStats.max.toFixed(0)} km/h but RPM max only ${rpmStats.max.toFixed(0)}`, channel: 'rpm' });
+      } else if (speedStats.stddev > 10 && rpmStats.stddev < 10) {
+        issues.push({ severity: 'warning', code: 'rpm-no-variation', message: 'Speed varies but RPM is constant — channel mapping error', channel: 'rpm' });
+      }
     }
   }
 
@@ -163,9 +176,12 @@ export function lint(session: Session): LintIssue[] {
     const stStats = channelStats(steer);
     if (Math.abs(stStats.max) > 900 || Math.abs(stStats.min) > 900) {
       issues.push({ severity: 'warning', code: 'steering-extreme', message: `Steering range [${stStats.min.toFixed(0)}, ${stStats.max.toFixed(0)}]° seems extreme`, channel: 'steering' });
-    }
-    if (speedStats.max > 100 && stStats.stddev < 0.1) {
-      issues.push({ severity: 'warning', code: 'steering-no-variation', message: 'Car is driving but steering never moves — channel mapping error', channel: 'steering' });
+    } else if (!carBarelyMoved) {
+      if (isNoSignal(stStats)) {
+        issues.push({ severity: 'warning', code: 'steering-no-signal', message: 'Steering channel exists but is all-zero — sensor not logged or CAN not connected', channel: 'steering' });
+      } else if (speedStats.max > 100 && stStats.stddev < 0.1) {
+        issues.push({ severity: 'warning', code: 'steering-no-variation', message: 'Car is driving but steering never moves — channel mapping error', channel: 'steering' });
+      }
     }
   }
 
@@ -196,9 +212,18 @@ export function lint(session: Session): LintIssue[] {
     if (lonStats.max > 180 || lonStats.min < -180) {
       issues.push({ severity: 'error', code: 'gps-lon-range', message: `GPS longitude [${lonStats.min.toFixed(2)}, ${lonStats.max.toFixed(2)}] outside ±180°`, channel: 'gpsLon' });
     }
-    // GPS should show movement if speed > 0
-    if (speedStats.max > 50 && latStats.stddev < 0.00001 && lonStats.stddev < 0.00001) {
-      issues.push({ severity: 'warning', code: 'gps-no-movement', message: 'Car is moving but GPS coordinates are static', channel: 'gpsLat' });
+
+    // GPS should show movement if the car was actually moving
+    if (!carBarelyMoved && speedStats.max > 50 && latStats.stddev < 0.00001 && lonStats.stddev < 0.00001) {
+      const allZero = isNoSignal(latStats) && isNoSignal(lonStats);
+      issues.push({
+        severity: 'warning',
+        code: allZero ? 'gps-empty' : 'gps-no-movement',
+        message: allZero
+          ? 'GPS lat/lon channels exist but are all-zero — coordinates likely stripped from export'
+          : 'Car is moving but GPS coordinates are static — frozen sensor',
+        channel: 'gpsLat',
+      });
     }
   }
 
@@ -219,17 +244,21 @@ export function lint(session: Session): LintIssue[] {
     issues.push({ severity: 'warning', code: 'no-laps', message: 'No laps detected' });
   }
 
+  const isSingleLapSession = session.lapCount === 1;
+
   for (const lap of session.laps) {
     const lapSecs = lap.lapTime / 1000;
+    const isTimedLap = lap.kind === 'flying' || lap.kind === 'first-flying';
 
-    // No track lap > 9 minutes (Nürburgring Nordschleife is ~8:30 for GT3)
-    if (lapSecs > MAX_LAP_TIME_S && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
-      issues.push({ severity: 'warning', code: 'lap-too-long', message: `${lap.displayLabel} is ${formatDuration(lapSecs)} — likely a single-lap session, not a misdetection`, channel: 'lap' });
+    // Lap time too long. For single-lap sessions, this is informational
+    // (it's a free-practice run, not a misdetection) and shouldn't warn.
+    if (lapSecs > MAX_LAP_TIME_S && isTimedLap && !isSingleLapSession) {
+      issues.push({ severity: 'warning', code: 'lap-too-long', message: `${lap.displayLabel} is ${formatDuration(lapSecs)} — exceeds 9-min ceiling for any real circuit`, channel: 'lap' });
     }
 
     // Timed laps should be 1-9 minutes for any real circuit.
     // <60s is a parser/classification bug (except karts, which are still 30s+)
-    if (lapSecs < 60 && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
+    if (lapSecs < 60 && isTimedLap && !carBarelyMoved) {
       issues.push({
         severity: lapSecs < 30 ? 'error' : 'warning',
         code: 'lap-too-short',
@@ -238,15 +267,15 @@ export function lint(session: Session): LintIssue[] {
       });
     }
 
-    // Lap distance sanity (shortest real track ~1km, longest ~25km)
-    if (lap.totalDistance > 0) {
-      if (lap.totalDistance < MIN_FLYING_LAP_DISTANCE_M && (lap.kind === 'flying' || lap.kind === 'first-flying')) {
+    // Lap distance sanity (shortest real track ~1km, longest ~25km).
+    // Suppress for single-lap sessions and stationary stints — both are
+    // expected to fall outside the "real lap" range.
+    if (lap.totalDistance > 0 && !carBarelyMoved && !isSingleLapSession) {
+      if (lap.totalDistance < MIN_FLYING_LAP_DISTANCE_M && isTimedLap) {
         issues.push({ severity: 'warning', code: 'lap-short-distance', message: `${lap.displayLabel} distance ${lap.totalDistance.toFixed(0)}m — seems short for a track lap` });
       }
-      if (lap.totalDistance > MAX_TRACK_LENGTH_M && session.lapCount > 1) {
+      if (lap.totalDistance > MAX_TRACK_LENGTH_M) {
         issues.push({ severity: 'error', code: 'lap-long-distance', message: `${lap.displayLabel} distance ${(lap.totalDistance/1000).toFixed(1)}km — no track is 30km+` });
-      } else if (lap.totalDistance > MAX_TRACK_LENGTH_M) {
-        issues.push({ severity: 'warning', code: 'lap-long-distance', message: `${lap.displayLabel} distance ${(lap.totalDistance/1000).toFixed(1)}km — single-lap session covering full run` });
       }
     }
 
@@ -277,7 +306,6 @@ export function lint(session: Session): LintIssue[] {
     const rl = matrix.row('wheelSpeedRL')!;
     const rr = matrix.row('wheelSpeedRR')!;
 
-    // All four should be roughly similar to vehicle speed
     for (const [row, name] of [[fl, 'FL'], [fr, 'FR'], [rl, 'RL'], [rr, 'RR']] as const) {
       const stats = channelStats(row);
       if (stats.max > speedStats.max * 2 && stats.max > 100) {
@@ -293,7 +321,6 @@ export function lint(session: Session): LintIssue[] {
       const row = matrix.row(`tirePressure${corner}`);
       if (!row) continue;
       const stats = channelStats(row);
-      // Race car tire pressure: 1.0-4.0 bar typical
       if (stats.max > 10) {
         issues.push({ severity: 'warning', code: `tire-pressure-${corner.toLowerCase()}-high`, message: `Tire pressure ${corner} max ${stats.max.toFixed(1)} bar — may be in wrong units`, channel: `tirePressure${corner}` });
       }
@@ -347,6 +374,16 @@ interface ChannelStatistics {
   stddev: number;
   nanFrac: number;
   zeroFrac: number;
+}
+
+/**
+ * Returns true if the channel contains no usable signal: every finite sample
+ * is exactly zero. This catches the common case of a CAN channel that's been
+ * declared in the file header but never actually populated (e.g. ERA_VBVD
+ * recordings without CAN bus connected, or PDS exports with GPS stripped).
+ */
+function isNoSignal(stats: ChannelStatistics): boolean {
+  return stats.min === 0 && stats.max === 0 && stats.zeroFrac > 0.99;
 }
 
 function channelStats(data: Float64Array): ChannelStatistics {
