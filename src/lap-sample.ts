@@ -19,9 +19,10 @@ export class LapSample {
 
   /** Read a channel value, with linear interpolation if this is an interpolated sample. */
   private _val(chIdx: number): number {
-    const v = this.matrix.channels[chIdx][this.idx];
+    const channel = this.matrix.channels[chIdx]!;
+    const v = channel[this.idx]!;
     if (this.hiIdx !== undefined && this.frac !== undefined && this.frac > 0) {
-      return v + (this.matrix.channels[chIdx][this.hiIdx] - v) * this.frac;
+      return v + (channel[this.hiIdx]! - v) * this.frac;
     }
     return v;
   }
@@ -43,15 +44,30 @@ export class LapSample {
     return this._val(CH_THROTTLE);
   }
 
-  // Optional channels — null if channel doesn't exist
-  private _opt(name: string): number | null {
+  has(name: string): boolean {
+    return this.matrix.has(name);
+  }
+
+  /** Generic accessor for any channel. Returns null if the channel was not recorded. */
+  get(name: string): number | null {
     const chIdx = this.matrix.nameToIndex.get(name);
     if (chIdx === undefined) return null;
-    const v = this.matrix.channels[chIdx][this.idx];
-    if (this.hiIdx !== undefined && this.frac !== undefined && this.frac > 0) {
-      return v + (this.matrix.channels[chIdx][this.hiIdx] - v) * this.frac;
-    }
-    return v;
+    return this._val(chIdx);
+  }
+
+  getOr(name: string, fallback: number): number {
+    return this.get(name) ?? fallback;
+  }
+
+  toObject(names: readonly string[] = this.matrix.names): Record<string, number | null> {
+    const out: Record<string, number | null> = {};
+    for (const name of names) out[name] = this.get(name);
+    return out;
+  }
+
+  // Optional channels — null if channel doesn't exist
+  private _opt(name: string): number | null {
+    return this.get(name);
   }
 
   get rpm(): number | null { return this._opt('rpm'); }

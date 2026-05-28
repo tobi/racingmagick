@@ -3,7 +3,7 @@
  * These channels exist in iRacing MoTeC files and PDS files.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { parseMotec } from '../parsers/motec';
 import { parsePds } from '../parsers/pds';
@@ -12,6 +12,8 @@ import {
 } from '../channels';
 
 const FIXTURES = join(__dirname, '../../fixtures');
+const fixtureExists = (...parts: string[]) => existsSync(join(FIXTURES, ...parts));
+const itIfFixture = (...parts: string[]) => fixtureExists(...parts) ? it : it.skip;
 
 // ── Channel name resolution ──────────────────────────────────────────
 
@@ -90,7 +92,7 @@ describe('tire unit normalization', () => {
 // ── iRacing MoTeC fixture (has full tire data) ───────────────────────
 
 describe('iRacing MoTeC tire channels', () => {
-  it('detects tire pressure, temp, slip, wear, and load channels', async () => {
+  itIfFixture('motec', 'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld')('detects tire pressure, temp, slip, wear, and load channels', async () => {
     const data = readFileSync(join(FIXTURES, 'motec',
       'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld'));
     const session = await parseMotec(new Uint8Array(data),
@@ -117,7 +119,7 @@ describe('iRacing MoTeC tire channels', () => {
     }
   });
 
-  it('tire pressure values are in bar (reasonable range)', async () => {
+  itIfFixture('motec', 'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld')('tire pressure values are in bar (reasonable range)', async () => {
     const data = readFileSync(join(FIXTURES, 'motec',
       'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld'));
     const session = await parseMotec(new Uint8Array(data),
@@ -132,7 +134,7 @@ describe('iRacing MoTeC tire channels', () => {
     }
   });
 
-  it('LapSample exposes tire properties', async () => {
+  itIfFixture('motec', 'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld')('LapSample exposes tire properties', async () => {
     const data = readFileSync(join(FIXTURES, 'motec',
       'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld'));
     const session = await parseMotec(new Uint8Array(data),
@@ -164,7 +166,7 @@ describe('iRacing MoTeC tire channels', () => {
 // ── PDS fixture (has tire pressure and temperature) ──────────────────
 
 describe('PDS tire channels', () => {
-  it('standard PDS has tire pressure and temperature', () => {
+  itIfFixture('pds', '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds')('standard PDS has tire pressure and temperature', () => {
     const data = readFileSync(join(FIXTURES, 'pds',
       '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'));
     const session = parsePds(new Uint8Array(data),
@@ -188,7 +190,7 @@ describe('PDS tire channels', () => {
 // ── Real-car MoTeC (no tire sensors typically) ───────────────────────
 
 describe('Real car MoTeC (no tire channels expected)', () => {
-  it('Oreca real-world file has no tire pressure/temp channels', async () => {
+  itIfFixture('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld')('Oreca real-world file has no tire pressure/temp channels', async () => {
     const data = readFileSync(join(FIXTURES, 'motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'));
     const session = await parseMotec(new Uint8Array(data),
       join(FIXTURES, 'motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'));

@@ -8,6 +8,17 @@ export { Session } from './session';
 export { Lap } from './lap';
 export { LapSample, LapSampleSlice } from './lap-sample';
 export { ChannelMatrix } from './channel-matrix';
+export type { ChannelInfo, ChannelMatrixBuilderInput } from './channel-matrix';
+export {
+  canonicalChannelNames, getCanonicalUnit, getChannelDefinition,
+  NORMALIZED_CHANNEL_UNITS,
+  resolveChannel, resolveChannelName, resolveAllChannels,
+  normalizeSpeed, normalizeRatio, normalizePressure, normalizeG,
+  normalizeTirePressure, normalizeTemperature, normalizeSlipAngle,
+  normalizeYawRate, normalizeDistance, normalizeAltitude,
+  normalizeDamperTravel, normalizeLoad,
+} from './channels';
+export type { CanonicalChannel, ChannelDefinition, ChannelTransform, ChannelPriority } from './channels';
 export {
   ParseError, LapError, LapKind,
   type SessionFormat, type SessionWarning, type ChannelAvailability,

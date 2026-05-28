@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { ChannelMatrix, buildChannelMatrix } from './channel-matrix';
-import type { ChannelMatrixBuilderInput } from './channel-matrix';
+import type { ChannelMatrixBuilderInput, ChannelInfo } from './channel-matrix';
 import { Lap } from './lap';
 import { buildLaps, computeSectorTimes } from './lap-classification';
 import { resolveAllChannels, resolveThrottleChannels, CHANNEL_PRIORITIES } from './channels';
@@ -283,6 +283,30 @@ export class Session {
       .update(`${data.fileURL}:${data.format}:${this.totalDuration}`)
       .digest('hex')
       .slice(0, 16);
+  }
+
+  channelNames(): string[] {
+    return this.matrix.channelNames();
+  }
+
+  hasChannel(name: string): boolean {
+    return this.matrix.has(name);
+  }
+
+  channel(name: string): Float64Array | null {
+    return this.matrix.channel(name);
+  }
+
+  channelOrThrow(name: string): Float64Array {
+    return this.matrix.channelOrThrow(name);
+  }
+
+  channelInfo(name: string): ChannelInfo | null {
+    return this.matrix.channelInfo(name);
+  }
+
+  channelsInfo(): ChannelInfo[] {
+    return this.matrix.channelsInfo();
   }
 
   lap(index: number): Lap {

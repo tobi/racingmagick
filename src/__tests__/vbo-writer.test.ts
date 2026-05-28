@@ -8,9 +8,11 @@ import { parsePds } from '../parsers/pds';
 import { parseVbo } from '../parsers/vbo';
 
 const FIXTURES = join(__dirname, '../../fixtures');
+const fixtureExists = (...parts: string[]) => existsSync(join(FIXTURES, ...parts));
+const itIfFixture = (...parts: string[]) => fixtureExists(...parts) ? it : it.skip;
 
 describe('VBO writer', () => {
-  it('converts MoTeC to VBO and re-parses it', async () => {
+  itIfFixture('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld')('converts MoTeC to VBO and re-parses it', async () => {
     const data = readFileSync(join(FIXTURES, 'motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'));
     const session = await parseMotec(new Uint8Array(data),
       join(FIXTURES, 'motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'));
@@ -45,7 +47,7 @@ describe('VBO writer', () => {
     expect(Math.abs(origMax - reMax) / origMax).toBeLessThan(0.05);
   });
 
-  it('converts PDS to VBO', () => {
+  itIfFixture('pds', '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds')('converts PDS to VBO', () => {
     const data = readFileSync(join(FIXTURES, 'pds',
       '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'));
     const session = parsePds(new Uint8Array(data),
@@ -63,7 +65,7 @@ describe('VBO writer', () => {
     expect(vboContent).toContain('Steering_Angle');
   });
 
-  it('exported VBO has no extreme values that break Circuit Tools', async () => {
+  itIfFixture('pds', '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds')('exported VBO has no extreme values that break Circuit Tools', async () => {
     // PDS files can have garbage sentinel values (-700 bar, 8M bar) that
     // Circuit Tools rejects. The writer must filter or clamp them.
     const data = readFileSync(join(FIXTURES, 'pds',
@@ -90,7 +92,7 @@ describe('VBO writer', () => {
     expect(extremeCount).toBe(0);
   });
 
-  it('round-trips VBO → VBO', () => {
+  itIfFixture('vbo', '25IT04_RdAm_PT2_Run01_RD.vbo')('round-trips VBO → VBO', () => {
     const origData = readFileSync(join(FIXTURES, 'vbo', '25IT04_RdAm_PT2_Run01_RD.vbo'));
     const session = parseVbo(new Uint8Array(origData),
       join(FIXTURES, 'vbo', '25IT04_RdAm_PT2_Run01_RD.vbo'));
@@ -112,7 +114,7 @@ describe('VBO writer', () => {
     expect(Math.abs(origMax - reMax) / origMax).toBeLessThan(0.05);
   });
 
-  it('includes GPS coordinates in NMEA format', async () => {
+  itIfFixture('vbo', '25IT04_RdAm_PT2_Run01_RD.vbo')('includes GPS coordinates in NMEA format', async () => {
     // VBO files with GPS should export GPS in NMEA format
     const data = readFileSync(join(FIXTURES, 'vbo', '25IT04_RdAm_PT2_Run01_RD.vbo'));
     const session = parseVbo(new Uint8Array(data),
@@ -129,7 +131,7 @@ describe('VBO writer', () => {
     expect(firstLine).toMatch(/[+-]\d{2,4}\.\d+/); // NMEA-like coordinates
   });
 
-  it('includes driver/vehicle/track in comments', async () => {
+  itIfFixture('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld')('includes driver/vehicle/track in comments', async () => {
     const data = readFileSync(join(FIXTURES, 'motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'));
     const session = await parseMotec(new Uint8Array(data),
       join(FIXTURES, 'motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'));

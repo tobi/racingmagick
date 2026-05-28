@@ -21,17 +21,17 @@ export type ChannelPriority = [pattern: string, transform: ChannelTransform | nu
 // ── Unit transforms (reusable lambdas) ───────────────────────────────
 
 export const toKmh: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'm/s' || ul === 'ms' || ul === 'mps') return v * 3.6;
-  if (ul === 'mph') return v * 1.60934;
-  if (ul === 'knots' || ul === 'kn' || ul === 'kt') return v * 1.852;
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (['m/s', 'ms', 'mps', 'meter/second', 'meters/second', 'metre/second', 'metres/second'].includes(ul)) return v * 3.6;
+  if (['mph', 'mi/h', 'mile/hour', 'miles/hour'].includes(ul)) return v * 1.609344;
+  if (['knots', 'knot', 'kn', 'kt', 'kts'].includes(ul)) return v * 1.852;
   return v;
 };
 
 export const toRatio: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === '%' || ul === 'pct' || ul === 'percent') return v / 100;
-  if (ul === 'deg') return v / 100;
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === '%' || ul === 'pct' || ul === 'percent' || ul === 'percentage') return v / 100;
+  if (ul === 'deg' || ul === '°') return v / 100;
   if (ul === 'rad') return v / 1.745;
   // Heuristic fallback: only for channels whose unit is empty but values
   // consistently look like 0–100 percentages. Threshold raised to avoid
@@ -41,55 +41,75 @@ export const toRatio: ChannelTransform = (v, u) => {
 };
 
 export const toBar: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'psi') return v * 0.0689476;
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'psi' || ul === 'lb/in2' || ul === 'lbf/in2') return v * 0.0689476;
   if (ul === 'kpa') return v * 0.01;
+  if (ul === 'mpa') return v * 10;
   if (ul === 'mbar') return v * 0.001;
   if (ul === 'pa') return v * 0.00001;
   return v;
 };
 
 export const toDeg: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'rad') return v * (180 / Math.PI);
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'rad' || ul === 'radian' || ul === 'radians') return v * (180 / Math.PI);
   return v;
 };
 
 export const toDecimalDeg: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'rad') return v * (180 / Math.PI);
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'rad' || ul === 'radian' || ul === 'radians') return v * (180 / Math.PI);
   return v;
 };
 
 export const toMetersAlt: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'ft' || ul === 'feet') return v * 0.3048;
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'ft' || ul === 'feet' || ul === 'foot') return v * 0.3048;
+  if (ul === 'km') return v * 1000;
+  if (ul === 'mi' || ul === 'mile' || ul === 'miles') return v * 1609.344;
   return v;
 };
 
 export const toG: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'm/s2' || ul === 'm/s²' || ul === 'ms2') return v / 9.81;
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'm/s2' || ul === 'm/s²' || ul === 'ms2' || ul === 'mps2') return v / 9.81;
   return v;
 };
 
 export const toDegPerSec: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'rad/s' || ul === 'rads') return v * (180 / Math.PI);
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'rad/s' || ul === 'rads' || ul === 'radian/s' || ul === 'radians/s') return v * (180 / Math.PI);
   return v;
 };
 
 export const toMeters: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
   if (ul === 'km') return v * 1000;
-  if (ul === 'mi' || ul === 'miles') return v * 1609.344;
+  if (ul === 'mi' || ul === 'mile' || ul === 'miles') return v * 1609.344;
+  if (ul === 'ft' || ul === 'feet' || ul === 'foot') return v * 0.3048;
   return v;
 };
 
 export const toCelsius: ChannelTransform = (v, u) => {
-  const ul = u.toLowerCase().trim();
-  if (ul === 'f' || ul === '°f' || ul === 'degf') return (v - 32) * 5 / 9;
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'f' || ul === '°f' || ul === 'degf' || ul === 'fahrenheit') return (v - 32) * 5 / 9;
   if (ul === 'k' || ul === 'kelvin') return v - 273.15;
+  return v;
+};
+
+export const toMillimeters: ChannelTransform = (v, u) => {
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'm' || ul === 'meter' || ul === 'meters' || ul === 'metre' || ul === 'metres') return v * 1000;
+  if (ul === 'cm' || ul === 'centimeter' || ul === 'centimeters' || ul === 'centimetre' || ul === 'centimetres') return v * 10;
+  if (ul === 'in' || ul === 'inch' || ul === 'inches') return v * 25.4;
+  return v;
+};
+
+export const toNewtons: ChannelTransform = (v, u) => {
+  const ul = u.toLowerCase().trim().replace(/\s+/g, '');
+  if (ul === 'kn') return v * 1000;
+  if (ul === 'lbf' || ul === 'lb') return v * 4.4482216152605;
+  if (ul === 'kgf' || ul === 'kg') return v * 9.80665;
   return v;
 };
 
@@ -216,16 +236,16 @@ export const CHANNEL_PRIORITIES: Record<string, ChannelPriority[]> = {
   // ── Traction control ───────────────────────────────────────────────
 
   tcCut: [
-    ['tc throttle cut', null],
-    ['tc cut', null],
-    ['tccut', null],
-    ['tc throttle reduction', null],
+    ['tc throttle cut', toRatio],
+    ['tc cut', toRatio],
+    ['tccut', toRatio],
+    ['tc throttle reduction', toRatio],
   ],
 
   tcSlip: [
-    ['tc slip target', null],
-    ['tc slip', null],
-    ['tcslip', null],
+    ['tc slip target', toRatio],
+    ['tc slip', toRatio],
+    ['tcslip', toRatio],
   ],
 
   // ── Dynamics ───────────────────────────────────────────────────────
@@ -247,9 +267,9 @@ export const CHANNEL_PRIORITIES: Record<string, ChannelPriority[]> = {
   ],
 
   heading: [
-    ['heading', null],
-    ['gps heading', null],
-    ['fia gpsheading', null],
+    ['heading', toDeg],
+    ['gps heading', toDeg],
+    ['fia gpsheading', toDeg],
   ],
 
   yawRate: [
@@ -348,10 +368,10 @@ export const CHANNEL_PRIORITIES: Record<string, ChannelPriority[]> = {
 
   // ── Dampers ────────────────────────────────────────────────────────
 
-  damperFL: [['x fl damper', null], ['damper travel fl', null]],
-  damperFR: [['x fr damper', null], ['damper travel fr', null]],
-  damperRL: [['x rl damper', null], ['damper travel rl', null]],
-  damperRR: [['x rr damper', null], ['damper travel rr', null]],
+  damperFL: [['x fl damper', toMillimeters], ['damper travel fl', toMillimeters]],
+  damperFR: [['x fr damper', toMillimeters], ['damper travel fr', toMillimeters]],
+  damperRL: [['x rl damper', toMillimeters], ['damper travel rl', toMillimeters]],
+  damperRR: [['x rr damper', toMillimeters], ['damper travel rr', toMillimeters]],
 
   // ── Tire pressures (→ bar) ─────────────────────────────────────────
 
@@ -377,24 +397,24 @@ export const CHANNEL_PRIORITIES: Record<string, ChannelPriority[]> = {
 
   // ── Tire slip ratios (dimensionless) ───────────────────────────────
 
-  tireSlipRatioFL: [['tire slip ratio fl', null], ['slip ratio fl', null]],
-  tireSlipRatioFR: [['tire slip ratio fr', null], ['slip ratio fr', null]],
-  tireSlipRatioRL: [['tire slip ratio rl', null], ['slip ratio rl', null]],
-  tireSlipRatioRR: [['tire slip ratio rr', null], ['slip ratio rr', null]],
+  tireSlipRatioFL: [['tire slip ratio fl', toRatio], ['slip ratio fl', toRatio]],
+  tireSlipRatioFR: [['tire slip ratio fr', toRatio], ['slip ratio fr', toRatio]],
+  tireSlipRatioRL: [['tire slip ratio rl', toRatio], ['slip ratio rl', toRatio]],
+  tireSlipRatioRR: [['tire slip ratio rr', toRatio], ['slip ratio rr', toRatio]],
 
   // ── Tire wear (0–1) ────────────────────────────────────────────────
 
-  tireWearFL: [['tire wear fl', null]],
-  tireWearFR: [['tire wear fr', null]],
-  tireWearRL: [['tire wear rl', null]],
-  tireWearRR: [['tire wear rr', null]],
+  tireWearFL: [['tire wear fl', toRatio]],
+  tireWearFR: [['tire wear fr', toRatio]],
+  tireWearRL: [['tire wear rl', toRatio]],
+  tireWearRR: [['tire wear rr', toRatio]],
 
   // ── Tire load (N) ──────────────────────────────────────────────────
 
-  tireLoadFL: [['tire load fl', null]],
-  tireLoadFR: [['tire load fr', null]],
-  tireLoadRL: [['tire load rl', null]],
-  tireLoadRR: [['tire load rr', null]],
+  tireLoadFL: [['tire load fl', toNewtons]],
+  tireLoadFR: [['tire load fr', toNewtons]],
+  tireLoadRL: [['tire load rl', toNewtons]],
+  tireLoadRR: [['tire load rr', toNewtons]],
 
   // ── Internal (not on LapSample) ────────────────────────────────────
 
@@ -405,6 +425,99 @@ export const CHANNEL_PRIORITIES: Record<string, ChannelPriority[]> = {
 };
 
 export type CanonicalChannel = keyof typeof CHANNEL_PRIORITIES;
+
+/** Canonical engineering unit for each normalized channel exposed by the public API. */
+export const NORMALIZED_CHANNEL_UNITS: Record<string, string> = {
+  time: 's',
+  distance: 'm',
+  trackPosition: 'ratio',
+  speed: 'km/h',
+  throttle: 'ratio',
+  throttleActual: 'ratio',
+  rpm: 'rpm',
+  gear: 'gear',
+  brakePedal: 'ratio',
+  brakePressure: 'bar',
+  brakePressureRear: 'bar',
+  clutchPedal: 'ratio',
+  clutchActual: 'ratio',
+  steering: 'deg',
+  tcCut: 'ratio',
+  tcSlip: 'ratio',
+  gLong: 'g',
+  gLat: 'g',
+  heading: 'deg',
+  yawRate: 'deg/s',
+  gpsLat: 'deg',
+  gpsLon: 'deg',
+  gpsAlt: 'm',
+  gpsSpeed: 'km/h',
+  gpsSatellites: 'count',
+  gpsFix: 'fix',
+  wheelSpeedFL: 'km/h',
+  wheelSpeedFR: 'km/h',
+  wheelSpeedRL: 'km/h',
+  wheelSpeedRR: 'km/h',
+  damperFL: 'mm',
+  damperFR: 'mm',
+  damperRL: 'mm',
+  damperRR: 'mm',
+  tirePressureFL: 'bar',
+  tirePressureFR: 'bar',
+  tirePressureRL: 'bar',
+  tirePressureRR: 'bar',
+  tireTempFL: '°C',
+  tireTempFR: '°C',
+  tireTempRL: '°C',
+  tireTempRR: '°C',
+  tireSlipAngleFL: 'deg',
+  tireSlipAngleFR: 'deg',
+  tireSlipAngleRL: 'deg',
+  tireSlipAngleRR: 'deg',
+  tireSlipRatioFL: 'ratio',
+  tireSlipRatioFR: 'ratio',
+  tireSlipRatioRL: 'ratio',
+  tireSlipRatioRR: 'ratio',
+  tireWearFL: 'ratio',
+  tireWearFR: 'ratio',
+  tireWearRL: 'ratio',
+  tireWearRR: 'ratio',
+  tireLoadFL: 'N',
+  tireLoadFR: 'N',
+  tireLoadRL: 'N',
+  tireLoadRR: 'N',
+  carOnJack: 'bool',
+  lapNumber: 'count',
+  lapGainLoss: 's',
+  driverId: 'id',
+};
+
+export interface ChannelDefinition {
+  readonly name: string;
+  readonly unit: string;
+  readonly aliases: readonly string[];
+  readonly required: boolean;
+}
+
+export function getCanonicalUnit(channelName: string): string | undefined {
+  return NORMALIZED_CHANNEL_UNITS[channelName];
+}
+
+export function getChannelDefinition(channelName: string): ChannelDefinition | undefined {
+  const aliases = CHANNEL_PRIORITIES[channelName]?.map(([alias]) => alias);
+  const unit = getCanonicalUnit(channelName);
+  if (!aliases || !unit) return undefined;
+  return {
+    name: channelName,
+    unit,
+    aliases,
+    required: channelName === 'speed' || channelName === 'throttle',
+  };
+}
+
+export function canonicalChannelNames(): string[] {
+  return Object.keys(CHANNEL_PRIORITIES);
+}
 
 // ── Build a flat lookup for fast resolution ──────────────────────────
 // Pre-compute: normalized pattern → { canonical, transform }
@@ -548,4 +661,9 @@ export {
   toBar as normalizeTirePressure,
   toCelsius as normalizeTemperature,
   toDeg as normalizeSlipAngle,
+  toDegPerSec as normalizeYawRate,
+  toMeters as normalizeDistance,
+  toMetersAlt as normalizeAltitude,
+  toMillimeters as normalizeDamperTravel,
+  toNewtons as normalizeLoad,
 };

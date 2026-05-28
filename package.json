@@ -2,14 +2,15 @@
   "name": "racingmagick",
   "version": "0.1.0",
   "description": "Universal motorsport telemetry parser — MoTeC, Pi/Cosworth, VBOX into a normalized Session/Lap/ChannelMatrix model",
+  "packageManager": "pnpm@11.1.3",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -22,11 +23,15 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "test": "vitest run --exclude src/__tests__/acceptance.test.ts --exclude src/__tests__/motec.test.ts --exclude src/__tests__/pds.test.ts --exclude src/__tests__/pds-export.test.ts --exclude src/__tests__/sanity.test.ts --exclude src/__tests__/tire-channels.test.ts --exclude src/__tests__/vbo-writer.test.ts --exclude src/__tests__/vbo.test.ts --exclude src/__tests__/video.test.ts",
+    "test:fixtures": "vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build && npm run test"
+    "prepublishOnly": "pnpm run clean && pnpm run build && pnpm run test"
   },
   "keywords": [
     "motorsport",
@@ -45,6 +50,7 @@
     "tsup": "^8.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0",
+    "vitepress": "^1.6.4",
     "vitest": "^3.0.0"
   },
   "engines": {

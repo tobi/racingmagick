@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { resolve } from 'path';
 import { describe, it, expect } from 'vitest';
@@ -36,7 +37,7 @@ describe('vboTimeToSeconds', () => {
 
 // ── Per-fixture tests ────────────────────────────────────────────────
 
-const FIXTURES = [
+const ALL_FIXTURES = [
   '25IT04_RdAm_PT2_Run01_RD.vbo',
   '25IT04_RdAm_PT2_Run02_TL.vbo',
   'ERA_081_2024_11_19_105252_0001.vbo',
@@ -44,6 +45,9 @@ const FIXTURES = [
   'VBOX202502140908250001.vbo',
   'VBOX202502140912340001.vbo',
 ];
+
+const FIXTURES = ALL_FIXTURES.filter((name) => existsSync(resolve(FIXTURES_DIR, name)));
+const itIfFixture = (name: string) => existsSync(resolve(FIXTURES_DIR, name)) ? it : it.skip;
 
 describe.each(FIXTURES)('parseVbo(%s)', (filename) => {
   it('parses without throwing', async () => {
@@ -102,26 +106,26 @@ describe.each(FIXTURES)('parseVbo(%s)', (filename) => {
 // ── Road America fixtures specific tests ─────────────────────────────
 
 describe('Road America fixtures', () => {
-  it('has circuit info', async () => {
+  itIfFixture('25IT04_RdAm_PT2_Run01_RD.vbo')('has circuit info', async () => {
     const session = await loadFixture('25IT04_RdAm_PT2_Run01_RD.vbo');
     expect(session.circuit).not.toBeNull();
     expect(session.circuit!.name).toBe('Road America');
     expect(session.circuit!.country).toBe('United States');
   });
 
-  it('has timing lines with splits', async () => {
+  itIfFixture('25IT04_RdAm_PT2_Run01_RD.vbo')('has timing lines with splits', async () => {
     const session = await loadFixture('25IT04_RdAm_PT2_Run01_RD.vbo');
     expect(session.circuit!.timingLines.length).toBeGreaterThan(0);
     const start = session.circuit!.timingLines.find((t) => t.type === 'start');
     expect(start).toBeDefined();
   });
 
-  it('has RPM data', async () => {
+  itIfFixture('25IT04_RdAm_PT2_Run01_RD.vbo')('has RPM data', async () => {
     const session = await loadFixture('25IT04_RdAm_PT2_Run01_RD.vbo');
     expect(session.has.rpm).toBe(true);
   });
 
-  it('has brake pressure data', async () => {
+  itIfFixture('25IT04_RdAm_PT2_Run01_RD.vbo')('has brake pressure data', async () => {
     const session = await loadFixture('25IT04_RdAm_PT2_Run01_RD.vbo');
     expect(session.has.brakePressure).toBe(true);
   });
@@ -130,12 +134,12 @@ describe('Road America fixtures', () => {
 // ── ERA fixtures specific tests ──────────────────────────────────────
 
 describe('ERA fixtures', () => {
-  it('ERA 2025 has damper data', async () => {
+  itIfFixture('ERA_081_2025_01_06_081816_0001.vbo')('ERA 2025 has damper data', async () => {
     const session = await loadFixture('ERA_081_2025_01_06_081816_0001.vbo');
     expect(session.has.dampers).toBe(true);
   });
 
-  it('ERA 2025 has wheel speed data', async () => {
+  itIfFixture('ERA_081_2025_01_06_081816_0001.vbo')('ERA 2025 has wheel speed data', async () => {
     const session = await loadFixture('ERA_081_2025_01_06_081816_0001.vbo');
     expect(session.has.wheelSpeeds).toBe(true);
   });

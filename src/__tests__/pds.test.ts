@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { resolve } from 'path';
 import { describe, it, expect } from 'vitest';
@@ -5,18 +6,20 @@ import { parsePds } from '../parsers/pds';
 
 const FIXTURES_DIR = resolve(__dirname, '../../fixtures/pds');
 
+const fixtureExists = (name: string) => existsSync(resolve(FIXTURES_DIR, name));
+
 const FIXTURE_FILES = [
   '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
-];
+].filter(fixtureExists);
 
 const NATIVE_RECORDING_FILES = [
   '250212084750_25IMSAT02_SEB_CT1_Run001_HM_Car11_#477.pds',
-];
+].filter(fixtureExists);
 
 const UNSUPPORTED_EXPORT_FILES = [
   'Export_MB_CT5_SebringTest2026.pds',
   'Export_Tobi_QualySim_SebringTest2026.pds',
-];
+].filter(fixtureExists);
 
 async function loadFixture(name: string): Promise<{ data: Uint8Array; path: string }> {
   const path = resolve(FIXTURES_DIR, name);
@@ -74,7 +77,7 @@ describe('PDS parser', () => {
     });
   }
 
-  describe('directory parsing', () => {
+  describe.skipIf(FIXTURE_FILES.length === 0)('directory parsing', () => {
     it('reads directory entries from files with standard offset', async () => {
       const { data } = await loadFixture(FIXTURE_FILES[0]!);
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -84,13 +87,13 @@ describe('PDS parser', () => {
       expect(entryCount).toBeLessThanOrEqual(64);
     });
 
-    it('detects native recording format and throws clear error', async () => {
+    it.skipIf(NATIVE_RECORDING_FILES.length === 0)('detects native recording format and throws clear error', async () => {
       const { data, path } = await loadFixture(NATIVE_RECORDING_FILES[0]!);
       expect(() => parsePds(data, path)).toThrow('native recording format');
     });
   });
 
-  describe('channel definition discovery', () => {
+  describe.skipIf(FIXTURE_FILES.length === 0)('channel definition discovery', () => {
     it('finds marker 0x7c72 in file with marker-based defs', async () => {
       // File 2 uses 0x7c72 markers
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
@@ -106,21 +109,21 @@ describe('PDS parser', () => {
     });
   });
 
-  describe('both layout variants work', () => {
+  describe.skipIf(FIXTURE_FILES.length === 0)('both layout variants work', () => {
     it('parses legacy variant (large file)', async () => {
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
       expect(session.matrix.channels.length).toBeGreaterThan(5);
     });
 
-    it('compact export variant parses successfully', async () => {
+    it.skipIf(UNSUPPORTED_EXPORT_FILES.length === 0)('compact export variant parses successfully', async () => {
       const { data, path } = await loadFixture(UNSUPPORTED_EXPORT_FILES[0]!);
       const session = parsePds(data, path);
       expect(session.matrix.channels.length).toBeGreaterThan(5);
     });
   });
 
-  describe('multi-chunk channel assembly', () => {
+  describe.skipIf(FIXTURE_FILES.length === 0)('multi-chunk channel assembly', () => {
     it('assembles multi-chunk channels correctly in legacy file', async () => {
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
@@ -130,7 +133,7 @@ describe('PDS parser', () => {
     });
   });
 
-  describe('UTF-16LE string decoding', () => {
+  describe.skipIf(FIXTURE_FILES.length === 0)('UTF-16LE string decoding', () => {
     it('decodes channel names correctly', async () => {
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
@@ -140,7 +143,7 @@ describe('PDS parser', () => {
     });
   });
 
-  describe('filename metadata extraction', () => {
+  describe.skipIf(FIXTURE_FILES.length === 0)('filename metadata extraction', () => {
     it('extracts driver from standard filename', async () => {
       const { data, path } = await loadFixture(FIXTURE_FILES[0]!);
       const session = parsePds(data, path);
@@ -163,6 +166,8 @@ describe('PDS parser', () => {
   });
 
   describe('compact export files', () => {
+    if (UNSUPPORTED_EXPORT_FILES.length === 0) it.skip('no compact export fixtures present', () => {});
+
     for (const file of UNSUPPORTED_EXPORT_FILES) {
       it(`${file} parses as float64 export variant`, async () => {
         const { data, path } = await loadFixture(file);

@@ -1,4 +1,5 @@
 import { ChannelMatrix } from './channel-matrix';
+import type { ChannelInfo } from './channel-matrix';
 import { LapSample, LapSampleSlice } from './lap-sample';
 import { CH_TRACK_POSITION, CH_TIME, CH_DISTANCE, CH_SPEED } from './types';
 import type { LapInfo, ChannelAvailability, LapDelta, PositionSource, SectorTime, LapError as LapErrorType } from './types';
@@ -60,10 +61,30 @@ export class Lap {
     return new LapSampleSlice(this.matrix, this.startIdx, this.endIdx);
   }
 
+  channelNames(): string[] {
+    return this.matrix.channelNames();
+  }
+
+  hasChannel(name: string): boolean {
+    return this.matrix.has(name);
+  }
+
   /** Raw channel data for this lap — subarray view, zero copy. */
   channel(name: string): Float64Array | null {
     const row = this.matrix.row(name);
     return row ? row.subarray(this.startIdx, this.endIdx) : null;
+  }
+
+  channelOrThrow(name: string): Float64Array {
+    const row = this.channel(name);
+    if (!row) throw new RangeError(`Channel not found: ${name}`);
+    return row;
+  }
+
+  channelInfo(name: string): ChannelInfo | null {
+    const info = this.matrix.channelInfo(name);
+    if (!info) return null;
+    return { ...info, sampleCount: this.sampleCount };
   }
 
   /** Get interpolated sample at a track position (0.0–1.0). */

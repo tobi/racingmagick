@@ -1,6 +1,16 @@
-import { CH_TIME, CH_DISTANCE, CH_TRACK_POSITION, CH_SPEED, CH_THROTTLE, WELL_KNOWN_CHANNELS } from './types';
+import { CH_TIME, WELL_KNOWN_CHANNELS } from './types';
 import type { ChannelAvailability } from './types';
 import { MAX_SAMPLE_RATE_HZ, DISCRETE_CHANNELS } from './constants';
+import { getCanonicalUnit } from './channels';
+
+export interface ChannelInfo {
+  readonly name: string;
+  readonly index: number;
+  readonly unit: string | null;
+  readonly sampleRate: number;
+  readonly sampleCount: number;
+  readonly required: boolean;
+}
 
 /**
  * The core data structure. One per session, shared by all laps.
@@ -25,12 +35,13 @@ export class ChannelMatrix {
     if (channels.length === 0) {
       throw new Error('ChannelMatrix requires at least one channel');
     }
-    this.sampleCount = channels[0].length;
+    this.sampleCount = channels[0]!.length;
     // Validate all channels have same length
     for (let i = 1; i < channels.length; i++) {
-      if (channels[i].length !== this.sampleCount) {
+      const channel = channels[i]!;
+      if (channel.length !== this.sampleCount) {
         throw new Error(
-          `Channel ${i} has ${channels[i].length} samples, expected ${this.sampleCount}`,
+          `Channel ${i} has ${channel.length} samples, expected ${this.sampleCount}`,
         );
       }
     }
@@ -46,13 +57,62 @@ export class ChannelMatrix {
     this.indexToName = names;
   }
 
+  /** Canonical channel names present in this matrix, in storage order. */
+  get names(): readonly string[] {
+    return this.indexToName.filter((name) => name.length > 0);
+  }
+
+  channelNames(): string[] {
+    return [...this.names];
+  }
+
   has(name: string): boolean {
     return this.nameToIndex.has(name);
   }
 
+  hasChannel(name: string): boolean {
+    return this.has(name);
+  }
+
   row(name: string): Float64Array | null {
     const idx = this.nameToIndex.get(name);
-    return idx !== undefined ? this.channels[idx] : null;
+    return idx !== undefined ? this.channels[idx] ?? null : null;
+  }
+
+  /** Alias for row(): returns the whole normalized channel, or null if absent. */
+  channel(name: string): Float64Array | null {
+    return this.row(name);
+  }
+
+  channelOrThrow(name: string): Float64Array {
+    const row = this.row(name);
+    if (!row) throw new RangeError(`Channel not found: ${name}`);
+    return row;
+  }
+
+  channelInfo(name: string): ChannelInfo | null {
+    const index = this.nameToIndex.get(name);
+    if (index === undefined) return null;
+    return {
+      name,
+      index,
+      unit: getCanonicalUnit(name) ?? null,
+      sampleRate: this.sampleRate,
+      sampleCount: this.sampleCount,
+      required: WELL_KNOWN_CHANNELS.includes(name as typeof WELL_KNOWN_CHANNELS[number]),
+    };
+  }
+
+  channelsInfo(): ChannelInfo[] {
+    return this.names.map((name) => this.channelInfo(name)!);
+  }
+
+  valueAt(name: string, sampleIndex: number): number | null {
+    if (sampleIndex < 0 || sampleIndex >= this.sampleCount) {
+      throw new RangeError(`Sample index ${sampleIndex} out of range [0, ${this.sampleCount})`);
+    }
+    const row = this.row(name);
+    return row ? row[sampleIndex]! : null;
   }
 
   /** Compute channel availability flags. Cached after first call. */
@@ -126,7 +186,8 @@ export class ChannelMatrix {
   /** Duration of the entire matrix in seconds. */
   get duration(): number {
     if (this.sampleCount === 0) return 0;
-    return this.channels[CH_TIME][this.sampleCount - 1] - this.channels[CH_TIME][0];
+    const time = this.channels[CH_TIME]!;
+    return time[this.sampleCount - 1]! - time[0]!;
   }
 }
 
@@ -177,7 +238,7 @@ export function buildChannelMatrix(
 
   // Reserve slots for well-known channels
   for (let i = 0; i < WELL_KNOWN_CHANNELS.length; i++) {
-    nameToIndex.set(WELL_KNOWN_CHANNELS[i], i);
+    nameToIndex.set(WELL_KNOWN_CHANNELS[i]!, i);
     channelArrays.push(new Float64Array(outputCount));
   }
 
@@ -190,7 +251,7 @@ export function buildChannelMatrix(
       channelArrays.push(new Float64Array(outputCount));
     }
 
-    const out = channelArrays[idx];
+    const out = channelArrays[idx]!;
     const isDiscrete = DISCRETE_CHANNELS.has(input.name);
 
     if (input.frequency === hz && input.samples.length === outputCount) {
@@ -204,7 +265,7 @@ export function buildChannelMatrix(
 
   // If time channel wasn't explicitly provided, generate it
   if (!inputs.some((ch) => ch.name === 'time')) {
-    const timeArr = channelArrays[CH_TIME];
+    const timeArr = channelArrays[CH_TIME]!;
     for (let i = 0; i < outputCount; i++) {
       timeArr[i] = i / hz;
     }
@@ -223,7 +284,7 @@ function resampleChannel(
   const srcCount = src.length;
   if (srcCount === 0) return;
   if (srcCount === 1) {
-    dst.fill(src[0]);
+    dst.fill(src[0]!);
     return;
   }
 

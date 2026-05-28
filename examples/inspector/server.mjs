@@ -11,12 +11,12 @@ import { join, extname, resolve } from 'path';
 import { readdirSync } from 'fs';
 
 // Dynamic import of our library (TypeScript via tsx)
-const ROOT = resolve(import.meta.dirname, '..');
+const ROOT = resolve(import.meta.dirname, '../..');
 const FIXTURES = join(ROOT, 'fixtures');
 
 // We'll use tsx to run our TS code
 async function loadParser() {
-  const lib = await import('../src/index.ts');
+  const lib = await import('../../src/index.ts');
   return lib;
 }
 

@@ -6,11 +6,16 @@ node_modules
 coverage
 .env
 
-# Binary telemetry fixtures (large, stored separately)
+# Generated docs site
+/docs/.vitepress/dist
+
+# Binary telemetry fixtures are large and may be proprietary. Keep ad-hoc
+# fixture drops ignored; only commit explicitly public/shareable fixtures.
 fixtures/motec/*.ld
 fixtures/motec/*.ldx
 fixtures/pds/*.pds
 fixtures/vbo/*.vbo
+!fixtures/vbo/25IT04_RdAm_PT2_Run01_RD.vbo
 
 # Video files (symlinks to NAS + re-encoded)
 fixtures/**/*.mp4

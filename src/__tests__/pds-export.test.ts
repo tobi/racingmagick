@@ -6,17 +6,18 @@
  * A 30-minute session should have ~15-17 laps.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { parsePds } from '../parsers/pds';
 
 const FIXTURES = join(__dirname, '../../fixtures/pds');
+const mbFixture = join(FIXTURES, 'Export_MB_CT5_SebringTest2026.pds');
+const tobiFixture = join(FIXTURES, 'Export_Tobi_QualySim_SebringTest2026.pds');
 
-describe('PDS export: Export_MB_CT5_SebringTest2026', () => {
-  const session = parsePds(
-    new Uint8Array(readFileSync(join(FIXTURES, 'Export_MB_CT5_SebringTest2026.pds'))),
-    'Export_MB_CT5_SebringTest2026.pds',
-  );
+(existsSync(mbFixture) ? describe : describe.skip)('PDS export: Export_MB_CT5_SebringTest2026', () => {
+  const session = existsSync(mbFixture)
+    ? parsePds(new Uint8Array(readFileSync(mbFixture)), 'Export_MB_CT5_SebringTest2026.pds')
+    : null as never;
 
   it('detects laps with correct timing', () => {
     // Export files detect 6-7 laps (partial — some lap boundaries lost
@@ -93,11 +94,10 @@ describe('PDS export: Export_MB_CT5_SebringTest2026', () => {
 // that cause some lap boundaries to be missed. This needs the resampler
 // to handle unequal channel lengths without introducing NaN/gaps.
 
-describe('PDS export: Export_Tobi_QualySim_SebringTest2026', () => {
-  const session = parsePds(
-    new Uint8Array(readFileSync(join(FIXTURES, 'Export_Tobi_QualySim_SebringTest2026.pds'))),
-    'Export_Tobi_QualySim_SebringTest2026.pds',
-  );
+(existsSync(tobiFixture) ? describe : describe.skip)('PDS export: Export_Tobi_QualySim_SebringTest2026', () => {
+  const session = existsSync(tobiFixture)
+    ? parsePds(new Uint8Array(readFileSync(tobiFixture)), 'Export_Tobi_QualySim_SebringTest2026.pds')
+    : null as never;
 
   it('detects laps with correct timing', () => {
     expect(session.lapCount).toBeGreaterThanOrEqual(4);

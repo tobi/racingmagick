@@ -3,7 +3,7 @@
  * Session/Lap/LapSample interface produces coherent, cross-format-consistent data.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { Session } from '../session';
 import { Lap } from '../lap';
@@ -13,6 +13,7 @@ import { parsePds } from '../parsers/pds';
 import { parseVbo } from '../parsers/vbo';
 
 const FIXTURES = join(__dirname, '../../fixtures');
+const fixtureExists = (format: string, name: string) => existsSync(join(FIXTURES, format, name));
 
 // ── Helper: load and parse each format ────────────────────────────────
 
@@ -128,7 +129,9 @@ describe('Acceptance: MoTeC fixtures', () => {
     'Oreca07_2024_Sebring_Winter_Test_SH_FL.ld',
     'Oreca07_2025_Sebring_Winter_Test_HM_FL.ld',
     'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld',
-  ];
+  ].filter((file) => fixtureExists('motec', file));
+
+  if (motecFiles.length === 0) it.skip('no MoTeC fixtures present', () => {});
 
   for (const file of motecFiles) {
     describe(file, () => {
@@ -210,10 +213,12 @@ describe('Acceptance: PDS fixtures', () => {
   const pdsFiles = [
     // Native recording (250212...) throws — tested in pds.test.ts
     '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
-  ];
+  ].filter((file) => fixtureExists('pds', file));
 
   // Export PDS files use a compact interleaved format that is not yet supported.
   // They throw ParseError with a clear message (tested in pds.test.ts).
+
+  if (pdsFiles.length === 0) it.skip('no PDS fixtures present', () => {});
 
   for (const file of pdsFiles) {
     describe(file, () => {
@@ -282,7 +287,7 @@ describe('Acceptance: VBO fixtures', () => {
     'ERA_081_2025_01_06_081816_0001.vbo',
     'VBOX202502140908250001.vbo',
     'VBOX202502140912340001.vbo',
-  ];
+  ].filter((file) => fixtureExists('vbo', file));
 
   for (const file of vboFiles) {
     describe(file, () => {
@@ -364,7 +369,11 @@ describe('Acceptance: VBO fixtures', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('Cross-format consistency', () => {
-  it('all formats produce the same Session interface', async () => {
+  it.skipIf(
+    !fixtureExists('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld') ||
+      !fixtureExists('vbo', '25IT04_RdAm_PT2_Run01_RD.vbo') ||
+      !fixtureExists('pds', '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'),
+  )('all formats produce the same Session interface', async () => {
     const motec = await loadMotec('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
     const vbo = loadVbo('25IT04_RdAm_PT2_Run01_RD.vbo');
     const pds = loadPds('260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds');
@@ -386,7 +395,11 @@ describe('Cross-format consistency', () => {
     }
   });
 
-  it('all formats produce the same Lap interface', async () => {
+  it.skipIf(
+    !fixtureExists('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld') ||
+      !fixtureExists('vbo', '25IT04_RdAm_PT2_Run01_RD.vbo') ||
+      !fixtureExists('pds', '260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds'),
+  )('all formats produce the same Lap interface', async () => {
     const motec = await loadMotec('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
     const vbo = loadVbo('25IT04_RdAm_PT2_Run01_RD.vbo');
     const pds = loadPds('260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds');
@@ -419,7 +432,7 @@ describe('Cross-format consistency', () => {
     }
   });
 
-  it('LapSample optional fields are consistently null when missing', async () => {
+  it.skipIf(!fixtureExists('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'))('LapSample optional fields are consistently null when missing', async () => {
     const motec = await loadMotec('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
     const lap = motec.laps[0]!;
     const sample = lap.at(0.5);
@@ -444,7 +457,7 @@ describe('Cross-format consistency', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('Lap delta', () => {
-  it('computes delta between two laps in same MoTeC session', async () => {
+  it.skipIf(!fixtureExists('motec', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld'))('computes delta between two laps in same MoTeC session', async () => {
     const session = await loadMotec('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
     const timed = session.timedLaps();
     if (timed.length < 2) return; // skip if not enough laps
@@ -469,7 +482,7 @@ describe('Lap delta', () => {
     expect(trace.length).toBe(100);
   });
 
-  it('computes delta between VBO laps', () => {
+  it.skipIf(!fixtureExists('vbo', '25IT04_RdAm_PT2_Run01_RD.vbo'))('computes delta between VBO laps', () => {
     const session = loadVbo('25IT04_RdAm_PT2_Run01_RD.vbo');
     const timed = session.timedLaps();
     if (timed.length < 2) return;

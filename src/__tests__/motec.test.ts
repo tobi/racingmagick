@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { parseMotec } from '../parsers/motec';
 
 const FIXTURES = join(__dirname, '../../fixtures/motec');
+
+const fixtureExists = (filename: string) => existsSync(join(FIXTURES, filename));
+const itIfFixture = (filename: string) => fixtureExists(filename) ? it : it.skip;
 
 const FILES = [
   'Oreca07_2023_Daytona24h_MJ_FL.ld',
@@ -11,7 +15,7 @@ const FILES = [
   'Oreca07_2024_Sebring_Winter_Test_SH_FL.ld',
   'Oreca07_2025_Sebring_Winter_Test_HM_FL.ld',
   'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld',
-];
+].filter(fixtureExists);
 
 async function loadSession(filename: string) {
   const path = join(FIXTURES, filename);
@@ -68,7 +72,7 @@ describe('MoTeC parser', () => {
   });
 
   describe('header parsing', () => {
-    it('parses Daytona header correctly', async () => {
+    itIfFixture('Oreca07_2023_Daytona24h_MJ_FL.ld')('parses Daytona header correctly', async () => {
       const session = await loadSession('Oreca07_2023_Daytona24h_MJ_FL.ld');
       expect(session.driver).toBe('Mikkel Jensen');
       expect(session.vehicle).toContain('MQ12Di');
@@ -76,7 +80,7 @@ describe('MoTeC parser', () => {
       expect(session.date.getFullYear()).toBe(2023);
     });
 
-    it('parses iRacing header correctly', async () => {
+    itIfFixture('ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld')('parses iRacing header correctly', async () => {
       const session = await loadSession(
         'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld',
       );
@@ -85,7 +89,7 @@ describe('MoTeC parser', () => {
       expect(session.track).toContain('le_mans');
     });
 
-    it('parses date and time from header', async () => {
+    itIfFixture('Oreca07_2023_Daytona24h_MJ_FL.ld')('parses date and time from header', async () => {
       const session = await loadSession('Oreca07_2023_Daytona24h_MJ_FL.ld');
       expect(session.date).toBeInstanceOf(Date);
       expect(session.date.getMonth()).toBe(0); // January
@@ -94,21 +98,21 @@ describe('MoTeC parser', () => {
   });
 
   describe('channel linked list traversal', () => {
-    it('Daytona file has multiple channels', async () => {
+    itIfFixture('Oreca07_2023_Daytona24h_MJ_FL.ld')('Daytona file has multiple channels', async () => {
       const session = await loadSession('Oreca07_2023_Daytona24h_MJ_FL.ld');
       // Should have speed, throttle, and more
       expect(session.matrix.has('speed')).toBe(true);
       expect(session.matrix.has('throttle')).toBe(true);
     });
 
-    it('iRacing file has many channels', async () => {
+    itIfFixture('ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld')('iRacing file has many channels', async () => {
       const session = await loadSession(
         'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld',
       );
       expect(session.matrix.has('speed')).toBe(true);
     });
 
-    it('Sebring test has expected channels', async () => {
+    itIfFixture('Oreca07_2024_Sebring_Test_2_MJ_FL.ld')('Sebring test has expected channels', async () => {
       const session = await loadSession('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
       expect(session.matrix.has('speed')).toBe(true);
       expect(session.matrix.has('throttle')).toBe(true);
@@ -116,7 +120,7 @@ describe('MoTeC parser', () => {
   });
 
   describe('integer channel conversion', () => {
-    it('reads integer channels with scale/dec_places correctly', async () => {
+    itIfFixture('Oreca07_2024_Sebring_Test_2_MJ_FL.ld')('reads integer channels with scale/dec_places correctly', async () => {
       // Sebring test files typically have brake pressure as integer channels
       const session = await loadSession('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
       if (session.matrix.has('brakePressure')) {
@@ -130,20 +134,20 @@ describe('MoTeC parser', () => {
   });
 
   describe('.ldx beacon parsing', () => {
-    it('Sebring Test 2 has multiple laps from beacons', async () => {
+    itIfFixture('Oreca07_2024_Sebring_Test_2_MJ_FL.ld')('Sebring Test 2 has multiple laps from beacons', async () => {
       // This file has 16 beacon Time values -> 15 laps
       const session = await loadSession('Oreca07_2024_Sebring_Test_2_MJ_FL.ld');
       expect(session.lapCount).toBeGreaterThan(1);
     });
 
-    it('Sebring 2025 has laps from beacons', async () => {
+    itIfFixture('Oreca07_2025_Sebring_Winter_Test_HM_FL.ld')('Sebring 2025 has laps from beacons', async () => {
       const session = await loadSession('Oreca07_2025_Sebring_Winter_Test_HM_FL.ld');
       expect(session.lapCount).toBeGreaterThan(1);
     });
   });
 
   describe('missing .ldx graceful fallback', () => {
-    it('parses with single lap when .ldx has no beacons', async () => {
+    itIfFixture('ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld')('parses with single lap when .ldx has no beacons', async () => {
       // iRacing file has empty MarkerGroup (no Time attributes)
       const session = await loadSession(
         'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld',
@@ -151,7 +155,7 @@ describe('MoTeC parser', () => {
       expect(session.lapCount).toBeGreaterThanOrEqual(1);
     });
 
-    it('Daytona with only 1 beacon falls back gracefully', async () => {
+    itIfFixture('Oreca07_2023_Daytona24h_MJ_FL.ld')('Daytona with only 1 beacon falls back gracefully', async () => {
       // Only 1 marker Time -> 0-1 beacons means single lap treatment
       const session = await loadSession('Oreca07_2023_Daytona24h_MJ_FL.ld');
       expect(session.lapCount).toBeGreaterThanOrEqual(1);

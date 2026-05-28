@@ -3,7 +3,7 @@
  * Every file must have zero errors. Warnings are printed but allowed.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { parseMotec } from '../parsers/motec';
 import { parsePds } from '../parsers/pds';
@@ -12,6 +12,7 @@ import { lint } from '../lint';
 import type { Session } from '../session';
 
 const FIXTURES = join(__dirname, '../../fixtures');
+const fixtureExists = (format: string, file: string) => existsSync(join(FIXTURES, format, file));
 
 interface Fixture {
   name: string;
@@ -23,20 +24,20 @@ const ALL_FIXTURES: Fixture[] = [
   ...['Oreca07_2023_Daytona24h_MJ_FL.ld', 'Oreca07_2024_Sebring_Test_2_MJ_FL.ld',
     'Oreca07_2024_Sebring_Winter_Test_SH_FL.ld', 'Oreca07_2025_Sebring_Winter_Test_HM_FL.ld',
     'ier_le_mans_&_ier_oreca_07_dev_&_Tobias Lutke_&_stint_24.ld',
-  ].map(f => ({
+  ].filter((f) => fixtureExists('motec', f)).map(f => ({
     name: `motec/${f}`,
     load: () => parseMotec(new Uint8Array(readFileSync(join(FIXTURES, 'motec', f))), join(FIXTURES, 'motec', f)),
   })),
   // PDS (standard variant — native recording throws, tested separately in pds.test.ts)
   ...['260223171205_26IMSA02_T02_SEB_CT1_Run004_TL_MQ12Di_LMP2 #443.pds',
-  ].map(f => ({
+  ].filter((f) => fixtureExists('pds', f)).map(f => ({
     name: `pds/${f}`,
     load: () => parsePds(new Uint8Array(readFileSync(join(FIXTURES, 'pds', f))), join(FIXTURES, 'pds', f)),
   })),
   // PDS (export variants)
   ...['Export_MB_CT5_SebringTest2026.pds',
     'Export_Tobi_QualySim_SebringTest2026.pds',
-  ].map(f => ({
+  ].filter((f) => fixtureExists('pds', f)).map(f => ({
     name: `pds-export/${f}`,
     load: () => parsePds(new Uint8Array(readFileSync(join(FIXTURES, 'pds', f))), join(FIXTURES, 'pds', f)),
   })),
@@ -44,7 +45,7 @@ const ALL_FIXTURES: Fixture[] = [
   ...['25IT04_RdAm_PT2_Run01_RD.vbo', '25IT04_RdAm_PT2_Run02_TL.vbo',
     'ERA_081_2024_11_19_105252_0001.vbo', 'ERA_081_2025_01_06_081816_0001.vbo',
     'VBOX202502140908250001.vbo', 'VBOX202502140912340001.vbo',
-  ].map(f => ({
+  ].filter((f) => fixtureExists('vbo', f)).map(f => ({
     name: `vbo/${f}`,
     load: () => parseVbo(new Uint8Array(readFileSync(join(FIXTURES, 'vbo', f))), join(FIXTURES, 'vbo', f)),
   })),
