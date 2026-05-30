@@ -27,7 +27,119 @@ async function loadFixture(name: string): Promise<{ data: Uint8Array; path: stri
   return { data: new Uint8Array(buf), path };
 }
 
+function writeUtf16le(view: DataView, offset: number, value: string, maxBytes: number): void {
+  for (let i = 0; i < value.length && i * 2 + 1 < maxBytes; i++) {
+    view.setUint16(offset + i * 2, value.charCodeAt(i), true);
+  }
+}
+
+function writeDirectoryEntry(
+  view: DataView,
+  offset: number,
+  entry: { sectionOffset: number; count: number; classA: number; classB: number; nextCount: number },
+): void {
+  view.setUint32(offset, entry.sectionOffset, true);
+  view.setUint32(offset + 4, 0, true);
+  view.setUint32(offset + 8, entry.count, true);
+  view.setUint32(offset + 0x10, entry.classA, true);
+  view.setUint32(offset + 0x14, entry.classB, true);
+  view.setUint32(offset + 0x18, entry.nextCount, true);
+}
+
+function writeMarkerlessChannelDef(
+  view: DataView,
+  offset: number,
+  entry: { id: number; name: string; unit?: string },
+): void {
+  view.setUint32(offset, entry.id, true);
+  writeUtf16le(view, offset + 8, entry.name, 112);
+  if (entry.unit) writeUtf16le(view, offset + 0x98, entry.unit, 32);
+}
+
+function writeChunk(
+  view: DataView,
+  offset: number,
+  entry: { order: number; channelId: number; samplePeriodTicks: number; sampleCount: number; dataPtr: number },
+): void {
+  view.setUint32(offset, entry.order, true);
+  view.setUint32(offset + 4, entry.channelId, true);
+  view.setUint32(offset + 8, entry.channelId, true);
+  view.setUint32(offset + 0x18, entry.samplePeriodTicks, true);
+  view.setUint32(offset + 0x1c, entry.sampleCount, true);
+  view.setUint32(offset + 0x38, entry.dataPtr, true);
+}
+
+function writeFloat64Samples(view: DataView, offset: number, samples: number[]): void {
+  samples.forEach((sample, index) => view.setFloat64(offset + index * 8, sample, true));
+}
+
+function buildPdsWithVariableDefinitionClass(): Uint8Array {
+  const data = new Uint8Array(0x500);
+  const view = new DataView(data.buffer);
+  const defsOffset = 0x200;
+  const defRecordSize = 0xc0;
+  const chunkOffset = defsOffset + defRecordSize * 2;
+  const nextOffset = chunkOffset + 0x40 * 2;
+  const speedDataPtr = 0x480;
+  const throttleDataPtr = 0x4a0;
+
+  writeDirectoryEntry(view, 0x80, {
+    sectionOffset: defsOffset,
+    count: 2,
+    classA: 8,
+    classB: 1,
+    nextCount: 2,
+  });
+  writeDirectoryEntry(view, 0xa0, {
+    sectionOffset: chunkOffset,
+    count: 2,
+    classA: 1,
+    classB: 3,
+    nextCount: 0,
+  });
+  writeDirectoryEntry(view, 0xc0, {
+    sectionOffset: nextOffset,
+    count: 0,
+    classA: 1,
+    classB: 1,
+    nextCount: 0,
+  });
+
+  writeMarkerlessChannelDef(view, defsOffset, { id: 1, name: 'speed', unit: 'm/s' });
+  writeMarkerlessChannelDef(view, defsOffset + defRecordSize, { id: 2, name: 'throttle pedal' });
+
+  writeChunk(view, chunkOffset, {
+    order: 0,
+    channelId: 1,
+    samplePeriodTicks: 1_000_000,
+    sampleCount: 4,
+    dataPtr: speedDataPtr,
+  });
+  writeChunk(view, chunkOffset + 0x40, {
+    order: 1,
+    channelId: 2,
+    samplePeriodTicks: 1_000_000,
+    sampleCount: 4,
+    dataPtr: throttleDataPtr,
+  });
+
+  writeFloat64Samples(view, speedDataPtr, [10, 11, 12, 13]);
+  writeFloat64Samples(view, throttleDataPtr, [0, 25, 50, 75]);
+
+  return data;
+}
+
 describe('PDS parser', () => {
+  it('detects markerless layouts when the definition section class varies', () => {
+    const data = buildPdsWithVariableDefinitionClass();
+    const session = parsePds(data, '260101120000_26IMSA01_T01_SEB_CT1_Run001_QA_Car01.pds');
+
+    expect(session.format).toBe('pds');
+    expect(session.matrix.has('speed')).toBe(true);
+    expect(session.matrix.has('throttle')).toBe(true);
+    expect(session.sampleRate).toBe(10);
+  });
+
   for (const file of FIXTURE_FILES) {
     describe(file, () => {
       it('parses without throwing', async () => {

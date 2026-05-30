@@ -55,8 +55,8 @@ function findDirectory(view: DataView, fileSize: number): DirEntry[] {
     const entries = readEntriesAt(view, start, 20, fileSize);
     let score = 0;
     for (const e of entries) {
-      if (e.classA <= 3 && e.classB <= 3 && e.offset > 0 && e.offset < fileSize) score += 2;
-      else if (e.classA <= 3 && e.classB <= 3) score += 1;
+      if (e.classB <= 3 && e.offset > 0 && e.offset < fileSize) score += 2;
+      else if (e.classB <= 3) score += 1;
     }
     if (score > bestScore) {
       bestScore = score;
@@ -78,9 +78,9 @@ interface Layout {
 }
 
 function findLayout(entries: DirEntry[], fileSize: number): Layout {
-  // Scan for valid triplets: defs, chunk, next
-  // defs entry should have classA==1, classB==1, and its offset section should
-  // contain plausible channel definition records
+  // Scan for valid triplets: defs, chunk, next.
+  // The definition entry has classB==1. classA can vary between PDS variants,
+  // so the offset/span/count checks below validate the actual layout shape.
   for (let i = 0; i < entries.length - 2; i++) {
     const defs = entries[i]!;
     const chunk = entries[i + 1]!;
@@ -89,7 +89,7 @@ function findLayout(entries: DirEntry[], fileSize: number): Layout {
     if (defs.offset >= chunk.offset) continue;
     if (chunk.offset >= next.offset) continue;
     if (next.offset > fileSize) continue;
-    if (defs.classA !== 1 || defs.classB !== 1) continue;
+    if (defs.classB !== 1) continue;
     if (defs.count === 0) continue;
 
     const span = next.offset - chunk.offset;
