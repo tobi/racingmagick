@@ -73,6 +73,25 @@ function writeFloat64Samples(view: DataView, offset: number, samples: number[]):
   samples.forEach((sample, index) => view.setFloat64(offset + index * 8, sample, true));
 }
 
+function writeInt16Samples(view: DataView, offset: number, samples: number[]): void {
+  samples.forEach((sample, index) => view.setInt16(offset + index * 2, sample, true));
+}
+
+function writeFloat32Samples(view: DataView, offset: number, samples: number[]): void {
+  samples.forEach((sample, index) => view.setFloat32(offset + index * 4, sample, true));
+}
+
+function writeMarkerlessChannelDefWithType(
+  view: DataView,
+  offset: number,
+  entry: { id: number; name: string; typeCode: number; unit?: string },
+): void {
+  view.setUint32(offset, entry.id, true);
+  writeUtf16le(view, offset + 8, entry.name, 112);
+  if (entry.unit) writeUtf16le(view, offset + 0x98, entry.unit, 32);
+  view.setUint32(offset + 0xd0, entry.typeCode, true);
+}
+
 function buildPdsWithVariableDefinitionClass(): Uint8Array {
   const data = new Uint8Array(0x500);
   const view = new DataView(data.buffer);
@@ -129,6 +148,81 @@ function buildPdsWithVariableDefinitionClass(): Uint8Array {
   return data;
 }
 
+interface TypedTestChannel {
+  id: number;
+  name: string;
+  typeCode: number;
+  samples: number[];
+}
+
+// Native (non-export) markerless layout: more than 200 channel definitions —
+// so it is parsed as a recording rather than a compact export — each carrying a
+// per-channel type code at +0xD0. One sample per second keeps the resample grid
+// identical to the source samples, so decoded values pass through unchanged.
+// Only the first few definition slots are populated; the remaining empty-name
+// slots are skipped by the parser.
+function buildMarkerlessPdsWithTypeCodes(channels: TypedTestChannel[]): Uint8Array {
+  const defsOffset = 0x200;
+  const defRecordSize = 0xe0; // >= 0xD4 so the +0xD0 type field fits in-record
+  const defsCount = 201; // > 200 marks this as a native recording, not an export
+  const chunkOffset = defsOffset + defRecordSize * defsCount;
+  const chunkRecordSize = 0x40;
+  const nextOffset = chunkOffset + chunkRecordSize * channels.length;
+  const dataBase = nextOffset;
+  const dataStride = 0x40;
+  const fileSize = dataBase + dataStride * channels.length + 0x40;
+
+  const data = new Uint8Array(fileSize);
+  const view = new DataView(data.buffer);
+
+  writeDirectoryEntry(view, 0x80, {
+    sectionOffset: defsOffset,
+    count: defsCount,
+    classA: 8,
+    classB: 1,
+    nextCount: channels.length,
+  });
+  writeDirectoryEntry(view, 0xa0, {
+    sectionOffset: chunkOffset,
+    count: channels.length,
+    classA: 1,
+    classB: 3,
+    nextCount: 0,
+  });
+  writeDirectoryEntry(view, 0xc0, {
+    sectionOffset: nextOffset,
+    count: 0,
+    classA: 1,
+    classB: 1,
+    nextCount: 0,
+  });
+
+  channels.forEach((ch, index) => {
+    writeMarkerlessChannelDefWithType(view, defsOffset + index * defRecordSize, {
+      id: ch.id,
+      name: ch.name,
+      typeCode: ch.typeCode,
+    });
+
+    const dataPtr = dataBase + index * dataStride;
+    writeChunk(view, chunkOffset + index * chunkRecordSize, {
+      order: index,
+      channelId: ch.id,
+      samplePeriodTicks: 10_000_000, // 1 Hz: source grid == resample grid
+      sampleCount: ch.samples.length,
+      dataPtr,
+    });
+
+    switch (ch.typeCode) {
+      case 2: writeInt16Samples(view, dataPtr, ch.samples); break;
+      case 6: writeFloat32Samples(view, dataPtr, ch.samples); break;
+      default: throw new Error(`unhandled test type code ${ch.typeCode}`);
+    }
+  });
+
+  return data;
+}
+
 describe('PDS parser', () => {
   it('detects markerless layouts when the definition section class varies', () => {
     const data = buildPdsWithVariableDefinitionClass();
@@ -138,6 +232,30 @@ describe('PDS parser', () => {
     expect(session.matrix.has('speed')).toBe(true);
     expect(session.matrix.has('throttle')).toBe(true);
     expect(session.sampleRate).toBe(10);
+  });
+
+  it('decodes native markerless channels using the per-channel type code at +0xD0', () => {
+    const data = buildMarkerlessPdsWithTypeCodes([
+      // speed + throttle are required for the parser to validate the session
+      { id: 1, name: 'speed', typeCode: 6, samples: [10, 20, 30, 40] },
+      { id: 2, name: 'throttle pedal', typeCode: 6, samples: [0, 25, 50, 75] },
+      // f32: the old code hardcoded float64 and over-read eight bytes per sample
+      { id: 3, name: 'decode_f32_test', typeCode: 6, samples: [1.5, -2.25, 100.5, 3.25] },
+      // i16: a newly handled type code; the negative value also pins signedness
+      { id: 4, name: 'decode_i16_test', typeCode: 2, samples: [-30000, -1, 1, 30000] },
+    ]);
+    const session = parsePds(data, '260101120000_26IMSA01_T01_SEB_CT1_Run001_QA_Car01.pds');
+
+    expect(session.format).toBe('pds');
+    expect(session.sampleRate).toBe(1);
+
+    const f32 = session.matrix.row('decode_f32_test');
+    const i16 = session.matrix.row('decode_i16_test');
+    expect(f32).not.toBeNull();
+    expect(i16).not.toBeNull();
+
+    expect(Array.from(f32!)).toEqual([1.5, -2.25, 100.5, 3.25]);
+    expect(Array.from(i16!)).toEqual([-30000, -1, 1, 30000]);
   });
 
   for (const file of FIXTURE_FILES) {

@@ -215,7 +215,7 @@ function parseMarkerlessDefs(
   recordSize: number,
   count: number,
   _chunkOffset: number,
-  _inferUnits: boolean = false,
+  isExport: boolean = false,
 ): ChannelDef[] {
   const defs: ChannelDef[] = [];
   for (let i = 0; i < count; i++) {
@@ -235,9 +235,17 @@ function parseMarkerlessDefs(
     // Infer units from channel name when metadata is missing
     if (!unit) unit = inferPdsUnit(name);
 
-    // Export files store data as float64 (type 7). The chunk records have the
-    // sequence number as channelId, so use the actual seq number as the def ID.
-    let typeCode = 7; // float64 for export variant
+    // Compact export files store every channel as float64. Native markerless
+    // recordings carry a per-channel type code at +0xD0 — the markerless
+    // analogue of the marker variant's +0xD8 field (the record body sits eight
+    // bytes lower without the 0x7c72 marker prefix). Honor it so channels that
+    // are not float64 are not over-read; fall back to float64 when the field is
+    // absent or out of the valid 1..7 range.
+    let typeCode = 7;
+    if (!isExport && recordSize >= 0xD4) {
+      const tc = view.getUint32(pos + 0xD0, true);
+      if (tc >= 1 && tc <= 7) typeCode = tc;
+    }
 
     defs.push({ id: channelId, name, unit, typeCode });
   }
@@ -356,6 +364,7 @@ function parseChunks(
 function byteSizeForType(typeCode: number): number {
   switch (typeCode) {
     case 1: return 1;
+    case 2: return 2; // int16 (signed)
     case 3: return 2;
     case 4: return 4;
     case 5: return 4;
@@ -384,6 +393,9 @@ function decodeSamples(
     switch (typeCode) {
       case 1:
         samples[i] = view.getUint8(off);
+        break;
+      case 2:
+        samples[i] = view.getInt16(off, true);
         break;
       case 3:
         samples[i] = view.getUint16(off, true);
