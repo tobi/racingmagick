@@ -83,6 +83,21 @@ yields an **absolute UTC timestamp per frame**, enabling drift-free alignment to
 `FIA_GpsTimeUTC` / `Global Time` in the telemetry even when the container `creation_time`
 was rewritten by a re-encode.
 
+### Worked example
+
+`scripts/video-laps.ts` is a runnable reference decoder built on this format. It calls
+`extractVideoTelemetry()` (which uses `parseAimTelemetryPcm` from `src/video-extract.ts`),
+dedupes by `off48`, applies the speed-sanity filter, then reconstructs the start/finish
+line geometrically to emit a per-lap table (lap time / distance / avg+max speed / frame
+range) straight from a video file:
+
+```sh
+pnpm exec tsx scripts/video-laps.ts onboard.MOV          # per-lap table
+pnpm exec tsx scripts/video-laps.ts onboard.MOV --dump    # per-sample CSV: raw + smoothed lat/lon, speed, confidence
+```
+
+Use it as the canonical example of going from raw frames → 4 Hz GPS → laps.
+
 ### Validation
 
 Decoded tracks for Le Mans 2026 FP3 stayed within the circuit bounding box
