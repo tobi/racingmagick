@@ -25,6 +25,12 @@ export interface VideoGpsSample {
   lon: number;
   /** Speed in m/s (from GPS, 0 if unavailable). */
   speed: number;
+  /**
+   * GPS time-of-week in milliseconds, if the source embeds an absolute GPS
+   * clock (AiM SmartyCam). Undefined for sources without an absolute clock.
+   * Combined with the file's date this yields drift-free UTC alignment.
+   */
+  gpsTowMs?: number;
 }
 
 export interface VideoMetadata {
@@ -41,7 +47,7 @@ export interface VideoTelemetry {
   /** GPS samples (1-18Hz depending on source). Empty if none. */
   gps: VideoGpsSample[];
   /** Source of GPS data. */
-  gpsSource: 'gopro-gpmf' | 'pi-camera' | 'none';
+  gpsSource: 'gopro-gpmf' | 'aim-smartycam' | 'pi-camera' | 'none';
   /** 1Hz audio RMS envelope (engine band). Null if unavailable. */
   audioRms: Float64Array | null;
 }
@@ -278,7 +284,10 @@ function parseGpmfStream(data: Buffer, out: VideoGpsSample[]): void {
     const lon = data.readInt32BE(off + 4) / lonScale;
     const speed = data.readInt32BE(off + 12) / spdScale;
 
-    if (Math.abs(lat) < 1 || Math.abs(lat) > 90 || Math.abs(lon) < 1 || Math.abs(lon) > 180) continue;
+    // Reject only null-island and out-of-range (see note in parsePiTelemetryPcm:
+    // European tracks near Greenwich have |lon| < 1).
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    if (Math.abs(lat) < 0.0001 && Math.abs(lon) < 0.0001) continue;
 
     out.push({ videoTime: 0, lat, lon, speed });
   }
@@ -321,7 +330,7 @@ function extractPiCameraGps(videoPath: string): VideoGpsSample[] {
     if (!ok || !existsSync(tmpFile)) return [];
 
     const data = readFileSync(tmpFile);
-    return parsePiTelemetryPcm(data);
+    return parseAimTelemetryPcm(data);
   } finally {
     try { unlinkSync(tmpFile); } catch { /* ignore */ }
     try { unlinkSync(tmpDir); } catch { /* ignore */ }
@@ -329,40 +338,73 @@ function extractPiCameraGps(videoPath: string): VideoGpsSample[] {
 }
 
 /**
- * Parse Pi camera 1Hz telemetry from PCM data.
- * Each second of 48kHz mono int16 audio starts with:
- *   [offset 0]  int32 LE: frame counter
- *   [offset 8]  int32 LE: elapsed counter (centiseconds)
- *   [offset 16] int32 LE: lat * 1e7
- *   [offset 24] int32 LE: lon * 1e7
+ * Parse AiM SmartyCam GP HD embedded telemetry from its PCM "TmcdHandler" track.
+ *
+ * The track is 48kHz/16-bit mono PCM (96000 bytes/s) carrying a data stream of
+ * fixed 19200-byte frames → 0.2s/frame → 5 frames/s. Each frame begins with a
+ * little-endian header:
+ *   [offset 0]  int32: frame counter (+5/frame)
+ *   [offset 8]  int32: millisecond counter (+200/frame)
+ *   [offset 16] int32: latitude  * 1e7
+ *   [offset 24] int32: longitude * 1e7
+ *   [offset 48] int32: GPS time-of-week (ms), advances 250ms (4Hz fixes)
+ *
+ * The GPS module fixes at 4Hz, so ~every 5th frame repeats the previous fix
+ * (off48 delta == 0). We keep all 5Hz samples and compute speed against the
+ * absolute GPS clock. See docs/aim_smartycam_video.md.
+ *
+ * (Historically mislabeled "pi-camera"; the previous code recovered only the
+ * 1Hz subset because second boundaries land on frame boundaries: 19200*5==96000.)
  */
-function parsePiTelemetryPcm(data: Buffer): VideoGpsSample[] {
-  const bytesPerSample = 2;
-  const sampleRate = 48000;
-  const bytesPerSecond = sampleRate * bytesPerSample;
-  const totalSeconds = Math.floor(data.length / bytesPerSecond);
-  if (totalSeconds < 2) return [];
+const AIM_FRAME_BYTES = 19200;
+const AIM_FRAME_SECONDS = 0.2;
+
+export function parseAimTelemetryPcm(data: Buffer): VideoGpsSample[] {
+  const totalFrames = Math.floor(data.length / AIM_FRAME_BYTES);
+  if (totalFrames < 10) return [];
 
   const samples: VideoGpsSample[] = [];
 
-  for (let sec = 0; sec < totalSeconds; sec++) {
-    const off = sec * bytesPerSecond;
-    if (off + 28 > data.length) break;
+  for (let f = 0; f < totalFrames; f++) {
+    const off = f * AIM_FRAME_BYTES;
+    if (off + 52 > data.length) break;
 
-    const latRaw = data.readInt32LE(off + 16);
-    const lonRaw = data.readInt32LE(off + 24);
-    const lat = latRaw / 1e7;
-    const lon = lonRaw / 1e7;
+    const lat = data.readInt32LE(off + 16) / 1e7;
+    const lon = data.readInt32LE(off + 24) / 1e7;
+    const towMs = data.readInt32LE(off + 48);
 
-    if (Math.abs(lat) < 1 || Math.abs(lat) > 90 || Math.abs(lon) < 1 || Math.abs(lon) > 180) continue;
+    // Reject only null-island and out-of-range. Do NOT reject small magnitudes:
+    // tracks near the Greenwich meridian have |lon| < 1 (Le Mans ≈ 0.21°E,
+    // Silverstone ≈ -1.0°) and would otherwise be silently discarded.
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    if (Math.abs(lat) < 0.0001 && Math.abs(lon) < 0.0001) continue;
 
-    samples.push({ videoTime: sec, lat, lon, speed: 0 });
+    const sample: VideoGpsSample = { videoTime: f * AIM_FRAME_SECONDS, lat, lon, speed: 0 };
+    if (towMs > 0) sample.gpsTowMs = towMs;
+    samples.push(sample);
+  }
+
+  // Derive speed (m/s) from consecutive unique GPS fixes using the embedded clock.
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1]!;
+    const b = samples[i]!;
+    const dtMs = (b.gpsTowMs ?? 0) - (a.gpsTowMs ?? 0);
+    if (dtMs > 0) {
+      const dist = haversine(a.lat, a.lon, b.lat, b.lon);
+      b.speed = dist / (dtMs / 1000);
+    } else {
+      b.speed = a.speed; // repeated fix between GPS updates
+    }
   }
 
   return validatePiSamples(samples) ? samples : [];
 }
 
-/** Validate Pi telemetry: frame deltas 20-40fps, elapsed deltas 500-2000cs, distances <3km. */
+/**
+ * Validate AiM telemetry: GPS distances between consecutive (5Hz) samples must
+ * be physically plausible. At 4Hz fixes, per-sample hops stay well under a few
+ * hundred metres; sporadic multipath outliers are tolerated at the p99 level.
+ */
 function validatePiSamples(samples: VideoGpsSample[]): boolean {
   if (samples.length < 30) return false;
 
@@ -578,11 +620,11 @@ export function extractVideoTelemetry(videoPath: string): VideoTelemetry {
     return { metadata, gps: gpmfGps, gpsSource: 'gopro-gpmf', audioRms };
   }
 
-  // Try Pi camera
-  const piGps = extractPiCameraGps(videoPath);
-  if (piGps.length > 10) {
+  // Try AiM SmartyCam embedded telemetry (PCM "TmcdHandler" data track)
+  const aimGps = extractPiCameraGps(videoPath);
+  if (aimGps.length > 10) {
     const audioRms = extractAudioRms(videoPath, metadata.duration);
-    return { metadata, gps: piGps, gpsSource: 'pi-camera', audioRms };
+    return { metadata, gps: aimGps, gpsSource: 'aim-smartycam', audioRms };
   }
 
   // Audio only (no GPS)

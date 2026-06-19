@@ -11,8 +11,14 @@ The auto-sync engine tries multiple methods in descending order of quality and c
 ### 1. The Gold Standard: Embedded Video GPS Matching (Highest Confidence)
 **How it works:** The engine extracts GPS telemetry embedded directly within the video file (supported by modern GoPros, Garmin, etc.) and compares the vehicle's Start/Finish line crossing times to the GPS coordinates in your telemetry file. This provides frame-perfect, real-world synchronization regardless of camera drift or when the camera was turned on.
 
+> **AiM SmartyCam support:** AiM SmartyCam GP HD onboards embed a **4 Hz GPS +
+> absolute GPS-time-of-week clock** inside the `.MOV` as a PCM data track. The
+> engine decodes this directly (5 Hz frames, deduped to 4 Hz fixes) — see
+> [`aim_smartycam_video.md`](./aim_smartycam_video.md). Note: keep the
+> camera-original `.MOV`; re-encoded `.mp4` deliveries drop the GPS track.
+
 **What you need:**
-* **Camera:** A camera recording high-Hz GPS data directly into the video file (e.g., GoPro metadata track).
+* **Camera:** A camera recording high-Hz GPS data directly into the video file (e.g., GoPro metadata track, or AiM SmartyCam `.MOV`).
 * **Telemetry Data:** Must export high-resolution GPS channels. 
   * Ensure **`FIA_GpsLatN`** (or `gps latitude`) and **`FIA_GpsLongE`** (or `gps longitude`) are exported.
 * **Lap Data:** The telemetry file must have lap times or distance splits to establish where the S/F line actually is. Exporting **`Previous Lap Time`** or **`lap_beacon`** guarantees this works flawlessly.

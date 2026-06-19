@@ -2,6 +2,11 @@
 
 This notes how Racecraft Viewer currently discovers onboards, maps them onto telemetry time, and keeps things usable when the **ClockCrew** workflow hands us re-encoded video without trustworthy metadata. It is the baseline the dedicated matching tool will build on.
 
+> **See also:** [`video-pds-matching.md`](./video-pds-matching.md) defines a deterministic,
+> cheap (no-full-parse) ladder for cross-identifying AiM `.MOV` onboards with Cosworth/Pi
+> `.pds` files using their embedded hard IDs and absolute GPS clocks. Prefer that over the
+> fuzzy filename/size scoring below whenever the original (non-re-encoded) files are present.
+
 ## Goals & Constraints
 - Show inline video (primary + optional reference) that follows the telemetry cursor/playhead.
 - Survive missing or wrong video metadata — ClockCrew often rewraps MOVs days later, so file timestamps drift by hours.
@@ -73,9 +78,18 @@ When auto fails — which is common for ClockCrew uploads — the operator sets 
 | Logger clock drift / non-1.0 rate | Playback slowly drifts out of sync | Manual step 2 computes `rate` from lap span; we persist rate so both auto-seek and playback honor it |
 | No matching filename | No video shown | Fuzzy token + size scoring picks best guess; still exposes manual toggle for the user to load another file |
 
-## 8. Roadmap Hooks for the Matching Tool
-- **Expose candidate list.** `_findVideo` currently picks the top score silently; the tool can surface the scorecard so humans can override when ClockCrew filenames get creative.
-- **Better fallbacks.** The audio RMS plumbing exists (`Store.videoAudioRMS`) but is not populated; the tool can run ffmpeg/ffprobe to extract audio envelopes and perform the cross-correlation promised in README.
-- **Metadata harvesting.** When future footage ships with trustworthy GPS time or embedded telemetry overlays, we can skip the heuristics entirely and trust the UTC alignment path.
+## 8. Preferred path: embedded IDs + GPS (when originals are present)
+The fuzzy filename/size scoring above is now the **fallback**, not the primary path.
+When camera-original files are available we identify and align deterministically:
 
-This baseline keeps today’s toolchain serviceable even when ClockCrew hands us mystery MOVs, and it defines the seams where the upcoming matching tool can bolt on richer metadata and correlation passes.
+- **Cross-identification** from cheap embedded IDs on both sides, no full parse — see
+  [`video-pds-matching.md`](./video-pds-matching.md).
+- **AiM SmartyCam `.MOV`** onboards carry embedded ~4 Hz GPS + an absolute GPS-time-of-week
+  clock that survives renames — decoded in `src/video-extract.ts`, format in
+  [`aim_smartycam_video.md`](./aim_smartycam_video.md). This is the trusted-GPS path that
+  lets us skip the heuristics entirely.
+
+The fuzzy baseline only applies to re-encoded `.mp4` deliveries whose data track and
+metadata were stripped, where filename tokens + lap-interval correlation are all that remain.
+The one remaining hook worth building is surfacing `_findVideo`'s candidate scorecard so a
+human can override creative ClockCrew filenames.

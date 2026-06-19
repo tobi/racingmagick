@@ -1,6 +1,60 @@
 import { describe, it, expect } from 'vitest';
-import { detectVideoLapCrossings, alignLapCrossings } from '../video-extract';
+import { detectVideoLapCrossings, alignLapCrossings, parseAimTelemetryPcm } from '../video-extract';
 import type { VideoGpsSample } from '../video-extract';
+
+// ── AiM SmartyCam embedded-telemetry PCM parser ──────────────────────
+
+describe('parseAimTelemetryPcm', () => {
+  const FRAME = 19200;
+
+  /** Build a synthetic AiM data track: `n` frames of 19200 bytes each. */
+  function buildTrack(
+    n: number,
+    fn: (i: number) => { lat: number; lon: number; tow: number },
+  ): Buffer {
+    const buf = Buffer.alloc(n * FRAME);
+    for (let i = 0; i < n; i++) {
+      const o = i * FRAME;
+      const { lat, lon, tow } = fn(i);
+      buf.writeInt32LE(Math.round(lat * 1e7), o + 16);
+      buf.writeInt32LE(Math.round(lon * 1e7), o + 24);
+      buf.writeInt32LE(tow, o + 48);
+    }
+    return buf;
+  }
+
+  it('decodes 5Hz frames with Le Mans (near-Greenwich) coordinates', () => {
+    // ~Le Mans: lon 0.21°E (the old |lon|<1 filter wrongly dropped these).
+    const track = buildTrack(100, (i) => ({
+      lat: 47.95 + i * 0.00005,
+      lon: 0.207 + i * 0.00003,
+      tow: 391469750 + Math.floor(i / 5) * 250, // 4Hz fixes inside 5Hz frames
+    }));
+    const gps = parseAimTelemetryPcm(track);
+    expect(gps.length).toBe(100);
+    expect(gps[0]!.videoTime).toBe(0);
+    expect(gps[1]!.videoTime).toBeCloseTo(0.2, 5); // 5Hz framing
+    expect(gps[0]!.lat).toBeCloseTo(47.95, 5);
+    expect(gps[0]!.lon).toBeCloseTo(0.207, 5); // small lon NOT rejected
+    expect(gps[0]!.gpsTowMs).toBe(391469750);
+  });
+
+  it('derives speed from consecutive fixes using the embedded GPS clock', () => {
+    const track = buildTrack(60, (i) => ({
+      lat: 47.95 + i * 0.0001, // ~11.1m north per frame
+      lon: 0.2,
+      tow: 391469750 + i * 250,
+    }));
+    const gps = parseAimTelemetryPcm(track);
+    // ~11.1m over 0.25s ≈ 44 m/s
+    expect(gps[1]!.speed).toBeGreaterThan(30);
+    expect(gps[1]!.speed).toBeLessThan(60);
+  });
+
+  it('rejects too-short tracks', () => {
+    expect(parseAimTelemetryPcm(Buffer.alloc(FRAME * 3))).toEqual([]);
+  });
+});
 
 // ── S/F crossing detection ───────────────────────────────────────────
 
